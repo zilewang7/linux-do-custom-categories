@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Linux Do 自定义类别
 // @namespace    ddc/linux-do-custom-categories
-// @version      0.0.1
+// @version      0.0.2
 // @author       DDC(NaiveMagic)
 // @description  Linux Do Custom Categories
 // @license      MIT
@@ -1282,7 +1282,7 @@
   const LIST_CONTROLS_SELECTOR = ".list-controls";
   const HEADER_LIST_ID = "header-list-area";
   const SHOW_MORE_SELECTOR = ".contents .show-more.has-topics";
-  const LIST_AREA_SELECTOR = "#list-area";
+  const LIST_AREA_SELECTOR$1 = "#list-area";
   const CONTENTS_SELECTOR = "#list-area .contents";
   const CUSTOM_LIST_CONTAINER_ID = "custom-topic-list-container";
   const CUSTOM_LIST_CONTAINER_CLASS = "custom-topic-list-container";
@@ -1382,7 +1382,7 @@
   }
   function ensureCustomListContainer() {
     const existing = document.getElementById(CUSTOM_LIST_CONTAINER_ID);
-    const listArea = document.querySelector(LIST_AREA_SELECTOR);
+    const listArea = document.querySelector(LIST_AREA_SELECTOR$1);
     if (existing) {
       if (!(existing instanceof HTMLDivElement)) {
         return null;
@@ -2229,7 +2229,7 @@
   const CUSTOM_GROUP_ATTR = "data-custom-group-id";
   const CUSTOM_LISTENER_ATTR = "data-custom-category-listener";
   const CUSTOM_URL_PREFIX = "/custom-c/";
-  const TOPIC_LIST_SELECTOR = ".topic-list";
+  const LIST_AREA_SELECTOR = "#list-area";
   const PENDING_CUSTOM_GROUP_KEY = "custom-category-pending-group";
   function buildCustomUrl(name) {
     const encodedName = encodeURIComponent(name.trim());
@@ -2300,6 +2300,22 @@
       return null;
     }
   }
+  function isAllowedCustomGroupUrl(url) {
+    if (url.origin !== window.location.origin) {
+      return false;
+    }
+    const path = url.pathname;
+    if (path === "/" || path === "/c" || path === "/c/") {
+      return true;
+    }
+    if (path.startsWith("/c/")) {
+      return true;
+    }
+    if (path.startsWith("/tag/")) {
+      return true;
+    }
+    return false;
+  }
   function redirectFromCustomUrlIfNeeded() {
     const customName = getCustomGroupNameFromPath(window.location.pathname);
     if (!customName) {
@@ -2323,6 +2339,11 @@
     if (!pendingName) {
       return;
     }
+    if (!isAllowedCustomGroupUrl(new URL(window.location.href))) {
+      storePendingCustomGroup(pendingName);
+      window.location.replace(`${window.location.origin}/`);
+      return;
+    }
     if (isCustomListViewActive()) {
       return;
     }
@@ -2331,9 +2352,9 @@
       return;
     }
     try {
-      await waitForElement(TOPIC_LIST_SELECTOR);
+      await waitForElement(LIST_AREA_SELECTOR);
     } catch (error) {
-      console.warn("Timeout waiting for topic list, skip restore:", error);
+      console.warn("Timeout waiting for list area, skip restore:", error);
       return;
     }
     await handleGroupClick(group);
@@ -2402,7 +2423,7 @@
     window.addEventListener("hashchange", handleLocationChange);
   }
   async function handleGroupClick(group) {
-    if (!document.querySelector(TOPIC_LIST_SELECTOR)) {
+    if (!isAllowedCustomGroupUrl(new URL(window.location.href))) {
       storePendingCustomGroup(group.name);
       window.location.replace(`${window.location.origin}/`);
       return;

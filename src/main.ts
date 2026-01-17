@@ -31,7 +31,7 @@ const CATEGORY_LINK_SELECTOR = "a.sidebar-section-link";
 const CUSTOM_GROUP_ATTR = "data-custom-group-id";
 const CUSTOM_LISTENER_ATTR = "data-custom-category-listener";
 const CUSTOM_URL_PREFIX = "/custom-c/";
-const TOPIC_LIST_SELECTOR = ".topic-list";
+const LIST_AREA_SELECTOR = "#list-area";
 const PENDING_CUSTOM_GROUP_KEY = "custom-category-pending-group";
 
 function buildCustomUrl(name: string): string {
@@ -112,6 +112,23 @@ function consumePendingCustomGroup(): string | null {
   }
 }
 
+function isAllowedCustomGroupUrl(url: URL): boolean {
+  if (url.origin !== window.location.origin) {
+    return false;
+  }
+  const path = url.pathname;
+  if (path === "/" || path === "/c" || path === "/c/") {
+    return true;
+  }
+  if (path.startsWith("/c/")) {
+    return true;
+  }
+  if (path.startsWith("/tag/")) {
+    return true;
+  }
+  return false;
+}
+
 function redirectFromCustomUrlIfNeeded(): boolean {
   const customName = getCustomGroupNameFromPath(window.location.pathname);
   if (!customName) {
@@ -136,6 +153,11 @@ async function restoreCustomGroupFromPending(): Promise<void> {
   if (!pendingName) {
     return;
   }
+  if (!isAllowedCustomGroupUrl(new URL(window.location.href))) {
+    storePendingCustomGroup(pendingName);
+    window.location.replace(`${window.location.origin}/`);
+    return;
+  }
   if (isCustomListViewActive()) {
     return;
   }
@@ -144,9 +166,9 @@ async function restoreCustomGroupFromPending(): Promise<void> {
     return;
   }
   try {
-    await waitForElement<HTMLTableElement>(TOPIC_LIST_SELECTOR);
+    await waitForElement<HTMLDivElement>(LIST_AREA_SELECTOR);
   } catch (error) {
-    console.warn("Timeout waiting for topic list, skip restore:", error);
+    console.warn("Timeout waiting for list area, skip restore:", error);
     return;
   }
   await handleGroupClick(group);
@@ -224,7 +246,7 @@ function initLocationObserver(): void {
 }
 
 async function handleGroupClick(group: CategoryGroup): Promise<void> {
-  if (!document.querySelector(TOPIC_LIST_SELECTOR)) {
+  if (!isAllowedCustomGroupUrl(new URL(window.location.href))) {
     storePendingCustomGroup(group.name);
     window.location.replace(`${window.location.origin}/`);
     return;
