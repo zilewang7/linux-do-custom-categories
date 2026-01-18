@@ -15,6 +15,7 @@ import {
   showLoading,
 } from "./ui/topicList";
 import { initModalObserver } from "./ui/configPanel";
+import { initMenu } from "./ui/menu";
 import { getCategoryGroups } from "./config/storage";
 import { waitForElement } from "./utils/dom";
 
@@ -372,6 +373,7 @@ async function init(): Promise<void> {
   }
   await injectSidebar(handleGroupClick);
   initModalObserver(handleRefresh);
+  initMenu();
   initLocationObserver();
   initCategoryClickListener();
   window.addEventListener("scroll", handleScroll);

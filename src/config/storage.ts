@@ -1,9 +1,50 @@
 import { GM_getValue, GM_setValue } from "$";
-import { CategoryGroup, CategoryMetadataCache, TagIconCache } from "../types";
+import {
+  CategoryGroup,
+  CategoryMetadataCache,
+  RequestControlSettings,
+  TagIconCache,
+} from "../types";
 
 const STORAGE_KEY = "categoryGroups";
 const CATEGORY_METADATA_KEY = "categoryMetadataCache";
 const TAG_ICON_CACHE_KEY = "tagIconCache";
+const REQUEST_CONTROL_KEY = "requestControlSettings";
+export const DEFAULT_REQUEST_CONTROL_SETTINGS: RequestControlSettings = {
+  concurrency: 5,
+  requestDelayMs: 200,
+};
+
+function normalizeInteger(value: unknown, fallback: number, minValue: number): number {
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : Number.NaN;
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  return Math.max(minValue, Math.round(numeric));
+}
+
+function normalizeRequestControlSettings(
+  input: RequestControlSettings | null
+): RequestControlSettings {
+  const base = input ?? DEFAULT_REQUEST_CONTROL_SETTINGS;
+  return {
+    concurrency: normalizeInteger(
+      base.concurrency,
+      DEFAULT_REQUEST_CONTROL_SETTINGS.concurrency,
+      1
+    ),
+    requestDelayMs: normalizeInteger(
+      base.requestDelayMs,
+      DEFAULT_REQUEST_CONTROL_SETTINGS.requestDelayMs,
+      0
+    ),
+  };
+}
 
 export function getCategoryGroups(): CategoryGroup[] {
   return GM_getValue<CategoryGroup[]>(STORAGE_KEY, []);
@@ -47,4 +88,19 @@ export function getTagIconCache(): TagIconCache | null {
 
 export function saveTagIconCache(cache: TagIconCache): void {
   GM_setValue(TAG_ICON_CACHE_KEY, cache);
+}
+
+export function getRequestControlSettings(): RequestControlSettings {
+  const stored = GM_getValue<RequestControlSettings | null>(REQUEST_CONTROL_KEY, null);
+  return normalizeRequestControlSettings(stored);
+}
+
+export function saveRequestControlSettings(settings: RequestControlSettings): RequestControlSettings {
+  const normalized = normalizeRequestControlSettings(settings);
+  GM_setValue(REQUEST_CONTROL_KEY, normalized);
+  return normalized;
+}
+
+export function resetRequestControlSettings(): void {
+  GM_setValue(REQUEST_CONTROL_KEY, DEFAULT_REQUEST_CONTROL_SETTINGS);
 }

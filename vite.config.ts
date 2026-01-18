@@ -25,7 +25,12 @@ export default defineConfig({
         match: ["https://linux.do/*"],
         description: "Linux Do Custom Categories",
         author: "DDC(NaiveMagic)",
-        grant: ["GM_getValue", "GM_setValue"],
+        grant: [
+          "GM_getValue",
+          "GM_setValue",
+          "GM_registerMenuCommand",
+          "GM_unregisterMenuCommand",
+        ],
       },
     }),
   ],

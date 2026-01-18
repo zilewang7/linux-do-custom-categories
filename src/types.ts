@@ -91,6 +91,11 @@ export interface CategoryGroup {
   categoryIds: number[];
 }
 
+export interface RequestControlSettings {
+  concurrency: number;
+  requestDelayMs: number;
+}
+
 export interface MergedTopicData {
   topics: Topic[];
   users: Map<number, User>;

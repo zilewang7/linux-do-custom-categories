@@ -1,7 +1,10 @@
 import { CategoryInfo, CategoryResponse, MergedTopicData, Topic, User } from "../types";
-import { getCategoryMetadataCache, saveCategoryMetadataCache } from "../config/storage";
+import {
+  getCategoryMetadataCache,
+  getRequestControlSettings,
+  saveCategoryMetadataCache,
+} from "../config/storage";
 
-const MAX_CONCURRENT_REQUESTS = 5;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 600;
 const HIERARCHICAL_CATEGORY_ENDPOINT =
@@ -426,6 +429,8 @@ export async function fetchMergedTopics(
   const newOffsets = new Map(pageOffsets);
   const categories = new Map<number, CategoryInfo>();
   const cachedMetadata = loadCategoryMetadataCache();
+  const requestSettings = getRequestControlSettings();
+  const requestDelayMs = requestSettings.requestDelayMs;
 
   let nextIndex = 0;
   const worker = async (): Promise<void> => {
@@ -463,10 +468,13 @@ export async function fetchMergedTopics(
           newOffsets.set(categoryId, page + 1);
         }
       }
+      if (requestDelayMs > 0) {
+        await delay(requestDelayMs, signal);
+      }
     }
   };
 
-  const concurrency = Math.min(MAX_CONCURRENT_REQUESTS, categoryIds.length);
+  const concurrency = Math.min(requestSettings.concurrency, categoryIds.length);
   const workers = Array.from({ length: concurrency }, () => worker());
   await Promise.all(workers);
 
