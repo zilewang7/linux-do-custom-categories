@@ -5,6 +5,8 @@ import { createEl } from "../utils/dom";
 const ADD_BTN_ID = "custom-category-add-btn";
 const TITLE_TEXT_CLASS = "custom-category-title-text";
 const CUSTOM_CHECKBOX_CLASS = "custom-category-checkbox";
+const NAME_INPUT_BOUND_ATTR = "data-custom-name-input-bound";
+const EDIT_PANEL_BOUND_ATTR = "data-custom-category-edit-panel";
 
 function generateId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -17,6 +19,7 @@ interface ModalState {
   originalDesc: string;
   originalSaveText: string;
   editingGroupId: string | null;
+  nameInputValue: string;
   nameInput: HTMLInputElement | null;
   cleanup: (() => void) | null;
 }
@@ -28,6 +31,7 @@ const state: ModalState = {
   originalDesc: "",
   originalSaveText: "",
   editingGroupId: null,
+  nameInputValue: "",
   nameInput: null,
   cleanup: null,
 };
@@ -42,6 +46,7 @@ function resetState(): void {
   state.isAddMode = false;
   state.selectedCategoryIds.clear();
   state.editingGroupId = null;
+  state.nameInputValue = "";
   state.nameInput = null;
   if (state.cleanup) {
     state.cleanup();
@@ -89,6 +94,20 @@ function getTitleTextElement(titleEl: HTMLElement): HTMLElement {
   return wrapper;
 }
 
+function getAddButtonHost(container: HTMLElement): HTMLElement | null {
+  const modalTitle = container.querySelector<HTMLElement>(".d-modal__title-text");
+  if (modalTitle) {
+    return modalTitle;
+  }
+  const panelTitle = container.querySelector<HTMLElement>(
+    ".sidebar__edit-navigation-menu__title, .sidebar__edit-navigation-menu__header"
+  );
+  if (panelTitle) {
+    return panelTitle;
+  }
+  return container.querySelector<HTMLElement>(".sidebar__edit-navigation-menu");
+}
+
 interface EnterAddModeOptions {
   group?: CategoryGroup;
 }
@@ -101,8 +120,11 @@ function enterAddMode(modal: HTMLElement, onSave: () => void, options?: EnterAdd
     editingGroup.categoryIds.forEach((id) => state.selectedCategoryIds.add(id));
   }
   state.editingGroupId = editingGroup?.id ?? null;
+  state.nameInputValue = editingGroup?.name ?? "";
 
-  const titleEl = modal.querySelector<HTMLElement>(".d-modal__title-text");
+  const titleEl = modal.querySelector<HTMLElement>(
+    ".d-modal__title-text, .sidebar__edit-navigation-menu__title"
+  );
   const titleTextEl = titleEl ? getTitleTextElement(titleEl) : null;
   const descEl = modal.querySelector<HTMLElement>(".sidebar__edit-navigation-menu__deselect-wrapper");
   const saveBtn = modal.querySelector<HTMLButtonElement>(".sidebar__edit-navigation-menu__save-button");
@@ -130,7 +152,15 @@ function enterAddMode(modal: HTMLElement, onSave: () => void, options?: EnterAdd
     addBtn.style.display = "none";
   }
 
-  const initialName = editingGroup?.name ?? "";
+  const bindNameInput = (input: HTMLInputElement) => {
+    if (input.getAttribute(NAME_INPUT_BOUND_ATTR) === "true") {
+      return;
+    }
+    input.setAttribute(NAME_INPUT_BOUND_ATTR, "true");
+    input.addEventListener("input", () => {
+      state.nameInputValue = input.value;
+    });
+  };
 
   const ensureNameInput = () => {
     const currentDescEl = modal.querySelector<HTMLElement>(".sidebar__edit-navigation-menu__deselect-wrapper");
@@ -141,8 +171,9 @@ function enterAddMode(modal: HTMLElement, onSave: () => void, options?: EnterAdd
     const existingNameInput = modal.querySelector<HTMLInputElement>("#custom-category-name-wrapper input");
     if (existingNameInput) {
       state.nameInput = existingNameInput;
-      if (existingNameInput.value !== initialName) {
-        existingNameInput.value = initialName;
+      bindNameInput(existingNameInput);
+      if (existingNameInput.value !== state.nameInputValue) {
+        existingNameInput.value = state.nameInputValue;
       }
       return;
     }
@@ -158,7 +189,8 @@ function enterAddMode(modal: HTMLElement, onSave: () => void, options?: EnterAdd
       placeholder: "输入名称",
       style: "flex: 1; padding: 6px 10px; border: 1px solid var(--primary-low); border-radius: 4px;",
     });
-    nameInput.value = initialName;
+    nameInput.value = state.nameInputValue;
+    bindNameInput(nameInput);
     inputWrapper.appendChild(nameInput);
     state.nameInput = nameInput;
     currentDescEl.after(inputWrapper);
@@ -352,7 +384,7 @@ function enterAddMode(modal: HTMLElement, onSave: () => void, options?: EnterAdd
       e.preventDefault();
       e.stopPropagation();
 
-      const name = state.nameInput?.value.trim();
+      const name = (state.nameInputValue || state.nameInput?.value || "").trim();
       if (!name) {
         alert("请输入自定义类别名");
         return;
@@ -396,9 +428,11 @@ function enterAddMode(modal: HTMLElement, onSave: () => void, options?: EnterAdd
 function injectAddButton(modal: HTMLElement, onSave: () => void): void {
   if (modal.querySelector(`#${ADD_BTN_ID}`)) return;
 
-  const titleEl = modal.querySelector<HTMLElement>(".d-modal__title-text");
-  if (!titleEl) return;
-  getTitleTextElement(titleEl);
+  const host = getAddButtonHost(modal);
+  if (!host) return;
+  if (host.classList.contains("d-modal__title-text")) {
+    getTitleTextElement(host);
+  }
 
   const btn = createEl("button", {
     id: ADD_BTN_ID,
@@ -413,32 +447,77 @@ function injectAddButton(modal: HTMLElement, onSave: () => void): void {
     enterAddMode(modal, onSave);
   });
 
-  titleEl.appendChild(btn);
+  host.appendChild(btn);
 }
 
 export function initModalObserver(onSave: () => void): void {
+  const enhancePanel = (container: HTMLElement) => {
+    if (!getAddButtonHost(container)) {
+      return;
+    }
+    if (container.getAttribute(EDIT_PANEL_BOUND_ATTR) === "true") {
+      return;
+    }
+    container.setAttribute(EDIT_PANEL_BOUND_ATTR, "true");
+    injectAddButton(container, onSave);
+    if (pendingEditGroup) {
+      const group = pendingEditGroup;
+      pendingEditGroup = null;
+      enterAddMode(container, onSave, { group });
+    }
+  };
+
+  const findEditPanelContainer = (node: HTMLElement): HTMLElement | null => {
+    if (node.matches(".d-modal__container") && node.querySelector(".sidebar-categories-form")) {
+      return node;
+    }
+    const modal = node.querySelector<HTMLElement>(".d-modal__container");
+    if (modal && modal.querySelector(".sidebar-categories-form")) {
+      return modal;
+    }
+    if (
+      node.matches(".sidebar__edit-navigation-menu") &&
+      node.querySelector(".sidebar-categories-form")
+    ) {
+      return node;
+    }
+    const panel = node.querySelector<HTMLElement>(".sidebar__edit-navigation-menu");
+    if (panel && panel.querySelector(".sidebar-categories-form")) {
+      return panel;
+    }
+    if (node.matches(".sidebar-categories-form")) {
+      return (
+        node.closest<HTMLElement>(".sidebar__edit-navigation-menu") ??
+        node.closest<HTMLElement>(".d-modal__container") ??
+        node.parentElement
+      );
+    }
+    const form = node.querySelector<HTMLElement>(".sidebar-categories-form");
+    if (form) {
+      return (
+        form.closest<HTMLElement>(".sidebar__edit-navigation-menu") ??
+        form.closest<HTMLElement>(".d-modal__container") ??
+        form.parentElement
+      );
+    }
+    return null;
+  };
+
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (!(node instanceof HTMLElement)) continue;
-        const modal = node.matches(".d-modal__container")
-          ? node
-          : node.querySelector?.(".d-modal__container");
-        if (modal instanceof HTMLElement) {
-          const title = modal.querySelector(".d-modal__title-text");
-          if (title?.textContent?.includes("编辑类别导航")) {
-            injectAddButton(modal, onSave);
-            if (pendingEditGroup) {
-              const group = pendingEditGroup;
-              pendingEditGroup = null;
-              enterAddMode(modal, onSave, { group });
-            }
-          }
+        const container = findEditPanelContainer(node);
+        if (container) {
+          enhancePanel(container);
         }
       }
       for (const node of mutation.removedNodes) {
         if (!(node instanceof HTMLElement)) continue;
-        if (node.matches(".d-modal__container") || node.querySelector?.(".d-modal__container")) {
+        if (
+          node.getAttribute(EDIT_PANEL_BOUND_ATTR) === "true" ||
+          node.querySelector?.(`[${EDIT_PANEL_BOUND_ATTR}="true"]`)
+        ) {
           resetState();
         }
       }
@@ -446,4 +525,13 @@ export function initModalObserver(onSave: () => void): void {
   });
 
   observer.observe(document.body, { childList: true, subtree: true });
+
+  const initialPanels = document.querySelectorAll<HTMLElement>(
+    ".d-modal__container, .sidebar__edit-navigation-menu"
+  );
+  initialPanels.forEach((panel) => {
+    if (panel.querySelector(".sidebar-categories-form")) {
+      enhancePanel(panel);
+    }
+  });
 }

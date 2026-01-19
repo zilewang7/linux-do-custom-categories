@@ -1,5 +1,8 @@
 import { CategoryGroup, MergedTopicData } from "./types";
-import { fetchMergedTopics, scheduleCategoryMetadataPrefetch } from "./api/discourse";
+import {
+  fetchMergedTopics,
+  scheduleCategoryMetadataPrefetch,
+} from "./api/discourse";
 import { scheduleTagIconPrefetch } from "./ui/tagIcons";
 import {
   clearActiveCustomGroup,
@@ -31,13 +34,14 @@ const CATEGORY_LIST_SELECTOR = "#sidebar-section-content-categories";
 const CATEGORY_LINK_SELECTOR = "a.sidebar-section-link";
 const CUSTOM_GROUP_ATTR = "data-custom-group-id";
 const CUSTOM_LISTENER_ATTR = "data-custom-category-listener";
+const LOGO_LISTENER_ATTR = "data-custom-logo-listener";
 const CUSTOM_URL_PREFIX = "/custom-c/";
 const LIST_AREA_SELECTOR = "#list-area";
 const PENDING_CUSTOM_GROUP_KEY = "custom-category-pending-group";
 
 function buildCustomUrl(name: string): string {
   const encodedName = encodeURIComponent(name.trim());
-  return `${window.location.origin}/custom-c/${encodedName}`;
+  return `${window.location.origin}${CUSTOM_URL_PREFIX}${encodedName}`;
 }
 
 function updateUrlToCustom(name: string): void {
@@ -57,10 +61,18 @@ function navigateWithHistory(url: string): void {
     intermediateUrl.href === targetUrl.href ? fallbackUrl : intermediateUrl;
 
   window.history.pushState(window.history.state, document.title, hopUrl.href);
-  window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+  window.dispatchEvent(
+    new PopStateEvent("popstate", { state: window.history.state }),
+  );
   window.setTimeout(() => {
-    window.history.pushState(window.history.state, document.title, targetUrl.href);
-    window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+    window.history.pushState(
+      window.history.state,
+      document.title,
+      targetUrl.href,
+    );
+    window.dispatchEvent(
+      new PopStateEvent("popstate", { state: window.history.state }),
+    );
   }, 0);
 }
 
@@ -127,7 +139,30 @@ function isAllowedCustomGroupUrl(url: URL): boolean {
   if (path.startsWith("/tag/")) {
     return true;
   }
+  if (path.startsWith(CUSTOM_URL_PREFIX)) {
+    return true;
+  }
   return false;
+}
+
+function isHomeLink(link: HTMLAnchorElement): boolean {
+  const href = link.getAttribute("href");
+  if (!href) {
+    return false;
+  }
+  try {
+    const url = new URL(href, window.location.origin);
+    return url.origin === window.location.origin && url.pathname === "/";
+  } catch (error) {
+    return false;
+  }
+}
+
+function isLogoLink(link: HTMLAnchorElement): boolean {
+  if (link.querySelector("#site-logo")) {
+    return true;
+  }
+  return link.closest(".title") !== null;
 }
 
 function redirectFromCustomUrlIfNeeded(): boolean {
@@ -233,7 +268,7 @@ function initLocationObserver(): void {
   const originalPushState = history.pushState.bind(history);
   const originalReplaceState = history.replaceState.bind(history);
   const wrapHistoryMethod = (
-    method: History["pushState"]
+    method: History["pushState"],
   ): History["pushState"] => {
     return (...args: Parameters<History["pushState"]>) => {
       method(...args);
@@ -261,7 +296,11 @@ async function handleGroupClick(group: CategoryGroup): Promise<void> {
 
   showLoading();
   try {
-    const data = await fetchMergedTopics(group.categoryIds, new Map(), controller.signal);
+    const data = await fetchMergedTopics(
+      group.categoryIds,
+      new Map(),
+      controller.signal,
+    );
     if (activeRequestId !== requestId || controller.signal.aborted) {
       return;
     }
@@ -277,7 +316,8 @@ async function handleGroupClick(group: CategoryGroup): Promise<void> {
 }
 
 async function loadMore(): Promise<void> {
-  if (!currentGroup || !currentData || !currentData.hasMore || isLoading) return;
+  if (!currentGroup || !currentData || !currentData.hasMore || isLoading)
+    return;
   const { controller, requestId } = startRequest();
 
   showLoading();
@@ -285,14 +325,16 @@ async function loadMore(): Promise<void> {
     const data = await fetchMergedTopics(
       currentGroup.categoryIds,
       currentData.pageOffsets,
-      controller.signal
+      controller.signal,
     );
     if (activeRequestId !== requestId || controller.signal.aborted) {
       return;
     }
     currentData.topics.push(...data.topics);
     data.users.forEach((u, id) => currentData!.users.set(id, u));
-    data.categories.forEach((category, id) => currentData!.categories.set(id, category));
+    data.categories.forEach((category, id) =>
+      currentData!.categories.set(id, category),
+    );
     currentData.hasMore = data.hasMore;
     currentData.pageOffsets = data.pageOffsets;
     data.categories = currentData.categories;
@@ -317,7 +359,7 @@ function handleScroll(): void {
 
 function getActiveCategoryHref(): string | null {
   const activeLink = document.querySelector<HTMLAnchorElement>(
-    `${CATEGORY_LIST_SELECTOR} a.sidebar-section-link.active:not([${CUSTOM_GROUP_ATTR}])`
+    `${CATEGORY_LIST_SELECTOR} a.sidebar-section-link.active:not([${CUSTOM_GROUP_ATTR}])`,
   );
   return activeLink?.href ?? null;
 }
@@ -359,6 +401,40 @@ function initCategoryClickListener(): void {
         navigateWithHistory(link.href);
       }
     },
+    true,
+  );
+}
+
+function initLogoClickListener(): void {
+  const body = document.body;
+  if (!body || body.getAttribute(LOGO_LISTENER_ATTR) === "true") {
+    return;
+  }
+  body.setAttribute(LOGO_LISTENER_ATTR, "true");
+  body.addEventListener(
+    "click",
+    (event) => {
+      if (!activeCustomUrl) {
+        return;
+      }
+      const target =
+        event.target instanceof Element
+          ? event.target
+          : event.target instanceof Node
+            ? event.target.parentElement
+            : null;
+      if (!target) {
+        return;
+      }
+      const link = target.closest<HTMLAnchorElement>("a[href]");
+      if (!link) {
+        return;
+      }
+      if (!isLogoLink(link) || !isHomeLink(link)) {
+        return;
+      }
+      cancelActiveOperation();
+    },
     true
   );
 }
@@ -371,11 +447,14 @@ async function init(): Promise<void> {
   if (redirectFromCustomUrlIfNeeded()) {
     return;
   }
-  await injectSidebar(handleGroupClick);
+  void injectSidebar(handleGroupClick).catch((error) => {
+    console.warn("Sidebar not ready yet, will retry on DOM changes:", error);
+  });
   initModalObserver(handleRefresh);
   initMenu();
   initLocationObserver();
   initCategoryClickListener();
+  initLogoClickListener();
   window.addEventListener("scroll", handleScroll);
   scheduleCategoryMetadataPrefetch();
   scheduleTagIconPrefetch();

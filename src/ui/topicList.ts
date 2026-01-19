@@ -32,6 +32,10 @@ type HeatSettings = {
 };
 let heatSettingsCache: HeatSettings | null = null;
 
+function isMobileView(): boolean {
+  return document.documentElement.classList.contains("mobile-view");
+}
+
 function getLoadingIndicator(): HTMLDivElement | null {
   return document.querySelector<HTMLDivElement>(LOADING_INDICATOR_SELECTOR);
 }
@@ -66,7 +70,7 @@ function ensureCustomViewStyles(): void {
       display: block;
     }
 
-    .${CUSTOM_VIEW_CLASS} ${CONTENTS_SELECTOR} {
+    .${CUSTOM_VIEW_CLASS} ${CONTENTS_SELECTOR}:not(#${CUSTOM_LIST_CONTAINER_ID}) {
       display: none !important;
     }
 
@@ -74,6 +78,23 @@ function ensureCustomViewStyles(): void {
     .${CUSTOM_VIEW_CLASS} #${HEADER_LIST_ID},
     .${CUSTOM_VIEW_CLASS} ${SHOW_MORE_SELECTOR} {
       display: none !important;
+    }
+
+    .mobile-view.${CUSTOM_VIEW_CLASS} #${CUSTOM_LIST_CONTAINER_ID} {
+      padding: 0 8px;
+    }
+
+    .mobile-view.${CUSTOM_VIEW_CLASS} #${CUSTOM_LIST_CONTAINER_ID} .topic-list {
+      width: 100%;
+    }
+
+    .mobile-view.${CUSTOM_VIEW_CLASS} #${CUSTOM_LIST_CONTAINER_ID} .topic-list-data {
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    .mobile-view.${CUSTOM_VIEW_CLASS} #${CUSTOM_LIST_CONTAINER_ID} .topic-item-metadata {
+      width: 100%;
     }
   `;
   const styleEl = createEl("style", { id: CUSTOM_VIEW_STYLE_ID }, [styles]);
@@ -155,7 +176,7 @@ function ensureCustomListContainer(): HTMLDivElement | null {
 
   const container = createEl("div", {
     id: CUSTOM_LIST_CONTAINER_ID,
-    class: CUSTOM_LIST_CONTAINER_CLASS,
+    class: `${CUSTOM_LIST_CONTAINER_CLASS} contents`,
   });
   const table = createEl("table", getTopicListTableAttributes());
   const caption = cloneTopicListCaption();
@@ -922,6 +943,22 @@ function createRepliesCell(topic: Topic): HTMLTableCellElement {
   return createEl("td", { class: classes.join(" ") }, [link]);
 }
 
+function createRepliesBadgeBlock(topic: Topic): HTMLDivElement {
+  const replies = getReplyCount(topic);
+  const link = createEl("a", {
+    href: `/t/${topic.slug}/${topic.id}/1`,
+    class: "badge-posts",
+    "aria-label": `${replies} 条回复，跳转到第一个帖子`,
+  });
+  link.appendChild(createEl("span", { class: "number" }, [String(replies)]));
+  const classes = ["num", "posts-map", "posts", "topic-list-data"];
+  const likesHeat = getLikesHeatClass(topic);
+  if (likesHeat) {
+    classes.push(likesHeat);
+  }
+  return createEl("div", { class: classes.join(" ") }, [link]);
+}
+
 function createViewsCell(topic: Topic): HTMLTableCellElement {
   const views = topic.views ?? 0;
   const viewsText = formatCompactNumber(views);
@@ -937,6 +974,10 @@ function createViewsCell(topic: Topic): HTMLTableCellElement {
   return createEl("td", { class: classes.join(" ") }, [span]);
 }
 
+function getLastPostNumber(topic: Topic): number {
+  return topic.highest_post_number ?? topic.posts_count ?? 1;
+}
+
 function createActivityCell(topic: Topic): HTMLTableCellElement {
   const activityTitle = buildActivityTitle(topic.created_at, topic.last_posted_at, topic.bumped_at);
   const activityAttrs: Record<string, string> = {
@@ -945,7 +986,7 @@ function createActivityCell(topic: Topic): HTMLTableCellElement {
   if (activityTitle) {
     activityAttrs.title = activityTitle;
   }
-  const lastPostNumber = topic.highest_post_number ?? topic.posts_count ?? 1;
+  const lastPostNumber = getLastPostNumber(topic);
   const link = createEl("a", {
     href: `/t/${topic.slug}/${topic.id}/${lastPostNumber}`,
     class: "post-activity",
@@ -959,11 +1000,112 @@ function createActivityCell(topic: Topic): HTMLTableCellElement {
   return createEl("td", activityAttrs, [link]);
 }
 
+function createMobileAvatar(topic: Topic, users: Map<number, User>): HTMLDivElement | null {
+  const poster = topic.posters[0];
+  if (!poster) {
+    return null;
+  }
+  const user = users.get(poster.user_id);
+  if (!user) {
+    return null;
+  }
+  const lastPostNumber = getLastPostNumber(topic);
+  const link = createEl("a", {
+    href: `/t/${topic.slug}/${topic.id}/${lastPostNumber}`,
+    "data-user-card": user.username,
+  });
+  const img = createEl("img", {
+    alt: "",
+    width: "48",
+    height: "48",
+    loading: "lazy",
+    src: buildAvatarUrl(user),
+    class: "avatar",
+    title: buildPosterTitle(user, poster),
+  });
+  link.appendChild(img);
+  const wrapper = createEl("div", { class: "pull-left" }, [link]);
+  return wrapper;
+}
+
+function createMobileActivityBlock(topic: Topic): HTMLDivElement {
+  const activityTitle = buildActivityTitle(topic.created_at, topic.last_posted_at, topic.bumped_at);
+  const spanAttrs: Record<string, string> = { class: "age activity" };
+  if (activityTitle) {
+    spanAttrs.title = activityTitle;
+  }
+  const lastPostNumber = getLastPostNumber(topic);
+  const link = createEl("a", {
+    href: `/t/${topic.slug}/${topic.id}/${lastPostNumber}`,
+  });
+  const relativeDate = createEl("span", {
+    class: "relative-date",
+    "data-time": String(new Date(topic.bumped_at).getTime()),
+    "data-format": "tiny",
+  }, [formatRelativeTimeTiny(topic.bumped_at)]);
+  link.appendChild(relativeDate);
+  const span = createEl("span", spanAttrs, [link]);
+  return createEl("div", { class: "num activity last" }, [span]);
+}
+
+function createTopicRowMobile(
+  topic: Topic,
+  users: Map<number, User>,
+  categories: Map<number, CategoryInfo>
+): HTMLTableRowElement {
+  const category = categories.get(topic.category_id);
+  const parentCategory = category?.parent_category_id
+    ? categories.get(category.parent_category_id)
+    : undefined;
+  const tr = createEl("tr", {
+    class: buildTopicRowClass(topic, category, parentCategory),
+    "data-topic-id": String(topic.id),
+  });
+
+  const td = createEl("td", { class: "topic-list-data" });
+  const avatar = createMobileAvatar(topic, users);
+  if (avatar) {
+    td.appendChild(avatar);
+  }
+
+  const metadata = createEl("div", { class: "topic-item-metadata right" });
+  const mainLink = createEl("div", { class: "main-link" });
+  mainLink.appendChild(createTopicStatuses(topic));
+  mainLink.appendChild(createTopicTitleLink(topic));
+  mainLink.appendChild(createTopicBadges(topic));
+  metadata.appendChild(mainLink);
+
+  const pullRight = createEl("div", { class: "pull-right" }, [
+    createRepliesBadgeBlock(topic),
+  ]);
+  metadata.appendChild(pullRight);
+
+  const stats = createEl("div", { class: "topic-item-stats clearfix" });
+  const categoryTags = createEl("span", { class: "topic-item-stats__category-tags" });
+  if (category) {
+    categoryTags.appendChild(createCategoryBadge(category, categories));
+  }
+  const tagsList = createTagsList(topic.tags);
+  if (tagsList) {
+    categoryTags.appendChild(tagsList);
+  }
+  stats.appendChild(categoryTags);
+  stats.appendChild(createMobileActivityBlock(topic));
+  metadata.appendChild(stats);
+
+  td.appendChild(metadata);
+  tr.appendChild(td);
+  return tr;
+}
+
 function createTopicRow(
   topic: Topic,
   users: Map<number, User>,
   categories: Map<number, CategoryInfo>
 ): HTMLTableRowElement {
+  if (isMobileView()) {
+    return createTopicRowMobile(topic, users, categories);
+  }
   const category = categories.get(topic.category_id);
   const parentCategory = category?.parent_category_id
     ? categories.get(category.parent_category_id)
