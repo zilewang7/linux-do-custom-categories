@@ -2,17 +2,20 @@ import { GM_getValue, GM_setValue } from "$";
 import {
   CategoryGroup,
   CategoryMetadataCache,
+  CategoryPathCache,
   RequestControlSettings,
   TagIconCache,
 } from "../types";
 
 const STORAGE_KEY = "categoryGroups";
 const CATEGORY_METADATA_KEY = "categoryMetadataCache";
+const CATEGORY_PATH_KEY = "categoryPathCache";
 const TAG_ICON_CACHE_KEY = "tagIconCache";
 const REQUEST_CONTROL_KEY = "requestControlSettings";
 export const DEFAULT_REQUEST_CONTROL_SETTINGS: RequestControlSettings = {
   concurrency: 5,
   requestDelayMs: 200,
+  maxRetryAttempts: 3,
 };
 
 function normalizeInteger(value: unknown, fallback: number, minValue: number): number {
@@ -42,6 +45,11 @@ function normalizeRequestControlSettings(
       base.requestDelayMs,
       DEFAULT_REQUEST_CONTROL_SETTINGS.requestDelayMs,
       0
+    ),
+    maxRetryAttempts: normalizeInteger(
+      base.maxRetryAttempts,
+      DEFAULT_REQUEST_CONTROL_SETTINGS.maxRetryAttempts,
+      -1
     ),
   };
 }
@@ -88,6 +96,14 @@ export function getTagIconCache(): TagIconCache | null {
 
 export function saveTagIconCache(cache: TagIconCache): void {
   GM_setValue(TAG_ICON_CACHE_KEY, cache);
+}
+
+export function getCategoryPathCache(): CategoryPathCache | null {
+  return GM_getValue<CategoryPathCache | null>(CATEGORY_PATH_KEY, null);
+}
+
+export function saveCategoryPathCache(cache: CategoryPathCache): void {
+  GM_setValue(CATEGORY_PATH_KEY, cache);
 }
 
 export function getRequestControlSettings(): RequestControlSettings {

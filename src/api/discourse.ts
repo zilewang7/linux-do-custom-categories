@@ -1,11 +1,13 @@
 import { CategoryInfo, CategoryResponse, MergedTopicData, Topic, User } from "../types";
 import {
   getCategoryMetadataCache,
+  getCategoryPathCache,
   getRequestControlSettings,
   saveCategoryMetadataCache,
+  saveCategoryPathCache,
 } from "../config/storage";
+import { startFetchProgress } from "../ui/fetchProgress";
 
-const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 600;
 const HIERARCHICAL_CATEGORY_ENDPOINT =
   "https://linux.do/categories/hierarchical_search?term=";
@@ -17,6 +19,8 @@ let hierarchicalCategoryCache: Map<number, CategoryInfo> | null = null;
 let hierarchicalCategoryPromise: Promise<Map<number, CategoryInfo>> | null = null;
 let hierarchicalCategoryCacheUpdatedAt: number | null = null;
 let prefetchTimeoutId: number | null = null;
+const categoryPathCache = new Map<number, string>();
+let categoryPathCacheLoaded = false;
 
 function createAbortError(): DOMException {
   return new DOMException("Aborted", "AbortError");
@@ -66,6 +70,10 @@ function isRetryableStatus(status: number): boolean {
   return status === 429 || status === 403;
 }
 
+function canRetry(attempt: number, maxRetryAttempts: number): boolean {
+  return maxRetryAttempts < 0 || attempt < maxRetryAttempts;
+}
+
 function getCsrfToken(): string | null {
   const meta = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]');
   return meta?.content ?? null;
@@ -77,6 +85,72 @@ function buildCategoryMap(categories: CategoryInfo[]): Map<number, CategoryInfo>
     map.set(category.id, category);
   });
   return map;
+}
+
+function loadCategoryPathCache(): void {
+  if (categoryPathCacheLoaded) {
+    return;
+  }
+  categoryPathCacheLoaded = true;
+  const stored = getCategoryPathCache();
+  if (!stored || typeof stored.updatedAt !== "number" || !stored.paths) {
+    return;
+  }
+  Object.entries(stored.paths).forEach(([key, value]) => {
+    const id = Number(key);
+    if (Number.isFinite(id) && value) {
+      categoryPathCache.set(id, value);
+    }
+  });
+}
+
+function persistCategoryPathCache(): void {
+  const paths: Record<string, string> = {};
+  categoryPathCache.forEach((value, key) => {
+    paths[String(key)] = value;
+  });
+  const updatedAt = Date.now();
+  saveCategoryPathCache({ updatedAt, paths });
+}
+
+function extractCategoryBasePath(url: string, categoryId: number): string | null {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const path = parsed.pathname;
+    if (!path.startsWith("/c/")) {
+      return null;
+    }
+    const match = path.match(/\/(\d+)(?:\.json)?$/);
+    if (!match) {
+      return null;
+    }
+    if (Number(match[1]) !== categoryId) {
+      return null;
+    }
+    return path.replace(/\.json$/, "");
+  } catch (error) {
+    return null;
+  }
+}
+
+function updateCategoryPathCache(categoryId: number, url: string): void {
+  const resolvedPath = extractCategoryBasePath(url, categoryId);
+  if (!resolvedPath) {
+    return;
+  }
+  const current = categoryPathCache.get(categoryId);
+  if (current !== resolvedPath) {
+    categoryPathCache.set(categoryId, resolvedPath);
+    persistCategoryPathCache();
+  }
+}
+
+function buildCategoryTopicsUrl(categoryId: number, page: number): string {
+  loadCategoryPathCache();
+  const cachedPath = categoryPathCache.get(categoryId);
+  const basePath = cachedPath ?? `/c/${categoryId}`;
+  const suffix = page === 0 ? "" : `?page=${page}`;
+  return `${window.location.origin}${basePath}.json${suffix}`;
 }
 
 function loadCategoryMetadataCache(): {
@@ -203,7 +277,8 @@ function mergeCategoryInfo(
 
 async function fetchHierarchicalCategoryPage(
   page: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  maxRetryAttempts = getRequestControlSettings().maxRetryAttempts
 ): Promise<CategoryInfo[]> {
   const url = `${HIERARCHICAL_CATEGORY_ENDPOINT}&page=${page}`;
   const headers: Record<string, string> = {
@@ -214,7 +289,8 @@ async function fetchHierarchicalCategoryPage(
   if (csrfToken) {
     headers["X-CSRF-Token"] = csrfToken;
   }
-  for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt += 1) {
+  let attempt = 0;
+  while (true) {
     if (signal?.aborted) {
       throw createAbortError();
     }
@@ -228,27 +304,28 @@ async function fetchHierarchicalCategoryPage(
         const data: { categories?: CategoryInfo[] } = await response.json();
         return data.categories ?? [];
       }
-      if (!isRetryableStatus(response.status) || attempt === MAX_RETRY_ATTEMPTS) {
+      if (!isRetryableStatus(response.status) || !canRetry(attempt, maxRetryAttempts)) {
         console.warn(`Failed to fetch hierarchical categories: ${response.status}`);
         return [];
       }
       const retryAfter = parseRetryAfter(response.headers.get("Retry-After"));
       const backoffMs =
         retryAfter ?? RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+      attempt += 1;
       await delay(backoffMs, signal);
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
       }
-      if (attempt === MAX_RETRY_ATTEMPTS) {
+      if (!canRetry(attempt, maxRetryAttempts)) {
         console.warn("Failed to fetch hierarchical categories:", error);
         return [];
       }
       const backoffMs = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+      attempt += 1;
       await delay(backoffMs, signal);
     }
   }
-  return [];
 }
 
 type HierarchyFetchOptions = {
@@ -261,6 +338,7 @@ async function fetchHierarchicalCategories(
   options?: HierarchyFetchOptions
 ): Promise<Map<number, CategoryInfo>> {
   const cached = loadCategoryMetadataCache();
+  const maxRetryAttempts = getRequestControlSettings().maxRetryAttempts;
   const nowMs = Date.now();
   const hasCache = cached.map && cached.updatedAt !== null;
   const updatedAt = cached.updatedAt ?? 0;
@@ -293,7 +371,9 @@ async function fetchHierarchicalCategories(
         (_, index) => page + index
       );
       const results = await Promise.all(
-        pages.map((targetPage) => fetchHierarchicalCategoryPage(targetPage, signal))
+        pages.map((targetPage) =>
+          fetchHierarchicalCategoryPage(targetPage, signal, maxRetryAttempts)
+        )
       );
       let shouldStop = false;
       results.forEach((list) => {
@@ -378,44 +458,46 @@ export function scheduleCategoryMetadataPrefetch(): void {
 export async function fetchCategoryTopics(
   categoryId: number,
   page = 0,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  maxRetryAttempts = getRequestControlSettings().maxRetryAttempts
 ): Promise<CategoryResponse | null> {
-  const url =
-    page === 0
-      ? `https://linux.do/c/${categoryId}.json`
-      : `https://linux.do/c/${categoryId}.json?page=${page}`;
+  const url = buildCategoryTopicsUrl(categoryId, page);
 
-  for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt += 1) {
+  let attempt = 0;
+  while (true) {
     if (signal?.aborted) {
       throw createAbortError();
     }
     try {
       const response = await fetch(url, { signal });
+      if (response.redirected) {
+        updateCategoryPathCache(categoryId, response.url);
+      }
       if (response.ok) {
         return response.json();
       }
-      if (!isRetryableStatus(response.status) || attempt === MAX_RETRY_ATTEMPTS) {
+      if (!isRetryableStatus(response.status) || !canRetry(attempt, maxRetryAttempts)) {
         console.warn(`Failed to fetch category ${categoryId}: ${response.status}`);
         return null;
       }
       const retryAfter = parseRetryAfter(response.headers.get("Retry-After"));
       const backoffMs =
         retryAfter ?? RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+      attempt += 1;
       await delay(backoffMs, signal);
     } catch (error) {
       if (isAbortError(error)) {
         throw error;
       }
-      if (attempt === MAX_RETRY_ATTEMPTS) {
+      if (!canRetry(attempt, maxRetryAttempts)) {
         console.warn(`Failed to fetch category ${categoryId}:`, error);
         return null;
       }
       const backoffMs = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+      attempt += 1;
       await delay(backoffMs, signal);
     }
   }
-
-  return null;
 }
 
 export async function fetchMergedTopics(
@@ -431,6 +513,8 @@ export async function fetchMergedTopics(
   const cachedMetadata = loadCategoryMetadataCache();
   const requestSettings = getRequestControlSettings();
   const requestDelayMs = requestSettings.requestDelayMs;
+  const maxRetryAttempts = requestSettings.maxRetryAttempts;
+  const progress = startFetchProgress(categoryIds.length);
 
   let nextIndex = 0;
   const worker = async (): Promise<void> => {
@@ -445,7 +529,15 @@ export async function fetchMergedTopics(
       nextIndex += 1;
       const categoryId = categoryIds[index];
       const page = pageOffsets.get(categoryId) ?? 0;
-      const response = await fetchCategoryTopics(categoryId, page, signal);
+      let response: CategoryResponse | null = null;
+      try {
+        response = await fetchCategoryTopics(categoryId, page, signal, maxRetryAttempts);
+      } catch (error) {
+        if (isAbortError(error)) {
+          throw error;
+        }
+        console.warn(`Failed to fetch category ${categoryId}:`, error);
+      }
       if (response) {
         response.users.forEach((u) => users.set(u.id, u));
         allTopics.push(...response.topic_list.topics);
@@ -467,6 +559,9 @@ export async function fetchMergedTopics(
           hasMore = true;
           newOffsets.set(categoryId, page + 1);
         }
+        progress.markSuccess();
+      } else {
+        progress.markFailure();
       }
       if (requestDelayMs > 0) {
         await delay(requestDelayMs, signal);
@@ -476,7 +571,17 @@ export async function fetchMergedTopics(
 
   const concurrency = Math.min(requestSettings.concurrency, categoryIds.length);
   const workers = Array.from({ length: concurrency }, () => worker());
-  await Promise.all(workers);
+  try {
+    await Promise.all(workers);
+  } catch (error) {
+    if (isAbortError(error)) {
+      progress.finish({ aborted: true });
+      throw error;
+    }
+    progress.finish();
+    throw error;
+  }
+  progress.finish();
 
   if (cachedMetadata.map) {
     cachedMetadata.map.forEach((category, id) => {

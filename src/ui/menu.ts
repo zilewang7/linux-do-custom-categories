@@ -9,6 +9,7 @@ import {
 const MENU_IDS = {
   concurrency: "custom-category-request-concurrency",
   delay: "custom-category-request-delay",
+  retry: "custom-category-request-retry",
   reset: "custom-category-request-reset",
 };
 
@@ -36,6 +37,33 @@ function promptForNumber(label: string, currentValue: number, minValue: number):
     return null;
   }
   return Math.max(minValue, Math.round(parsed));
+}
+
+function promptForRetryAttempts(label: string, currentValue: number): number | null {
+  const input = window.prompt(`${label} (-1 表示无限)`, String(currentValue));
+  if (input === null) {
+    return null;
+  }
+  const trimmed = input.trim();
+  if (!trimmed) {
+    window.alert("请输入有效数字");
+    return null;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) {
+    window.alert("请输入有效数字");
+    return null;
+  }
+  const rounded = Math.round(parsed);
+  if (rounded < -1) {
+    window.alert("请输入 -1 或非负整数");
+    return null;
+  }
+  return rounded;
+}
+
+function formatRetryAttempts(value: number): string {
+  return value < 0 ? "无限" : String(value);
 }
 
 function refreshMenuCommands(): void {
@@ -87,6 +115,29 @@ function refreshMenuCommands(): void {
   );
 
   GM_registerMenuCommand(
+    `设置最大重试次数 (当前: ${formatRetryAttempts(settings.maxRetryAttempts)})`,
+    () => {
+      const currentSettings = getRequestControlSettings();
+      const nextValue = promptForRetryAttempts(
+        "请输入最大重试次数",
+        currentSettings.maxRetryAttempts
+      );
+      if (nextValue === null || nextValue === currentSettings.maxRetryAttempts) {
+        return;
+      }
+      saveRequestControlSettings({
+        ...currentSettings,
+        maxRetryAttempts: nextValue,
+      });
+      refreshMenuCommands();
+    },
+    {
+      id: MENU_IDS.retry,
+      title: "设置失败重试上限，-1 表示无限重试",
+    }
+  );
+
+  GM_registerMenuCommand(
     "重置请求设置",
     () => {
       resetRequestControlSettings();
@@ -94,7 +145,7 @@ function refreshMenuCommands(): void {
     },
     {
       id: MENU_IDS.reset,
-      title: `恢复默认：并发 ${DEFAULT_REQUEST_CONTROL_SETTINGS.concurrency}，间隔 ${DEFAULT_REQUEST_CONTROL_SETTINGS.requestDelayMs} ms`,
+      title: `恢复默认：并发 ${DEFAULT_REQUEST_CONTROL_SETTINGS.concurrency}，间隔 ${DEFAULT_REQUEST_CONTROL_SETTINGS.requestDelayMs} ms，重试 ${formatRetryAttempts(DEFAULT_REQUEST_CONTROL_SETTINGS.maxRetryAttempts)}`,
     }
   );
 }

@@ -94,6 +94,7 @@ export interface CategoryGroup {
 export interface RequestControlSettings {
   concurrency: number;
   requestDelayMs: number;
+  maxRetryAttempts: number;
 }
 
 export interface MergedTopicData {
@@ -107,6 +108,11 @@ export interface MergedTopicData {
 export interface CategoryMetadataCache {
   updatedAt: number;
   categories: CategoryInfo[];
+}
+
+export interface CategoryPathCache {
+  updatedAt: number;
+  paths: Record<string, string>;
 }
 
 export interface TagIconEntry {

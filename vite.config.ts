@@ -19,6 +19,8 @@ export default defineConfig({
         icon: getUserscriptIcon(),
         namespace: "ddc/linux-do-custom-categories",
         homepage: "https://github.com/zilewang7/linux-do-custom-categories",
+        downloadURL:
+          "https://update.greasyfork.org/scripts/563058/Linux%20Do%20%E8%87%AA%E5%AE%9A%E4%B9%89%E7%B1%BB%E5%88%AB.user.js",
         updateURL:
           "https://update.greasyfork.org/scripts/563058/Linux%20Do%20%E8%87%AA%E5%AE%9A%E4%B9%89%E7%B1%BB%E5%88%AB.meta.js",
         license: "MIT",
