@@ -1,6 +1,7 @@
 import { CategoryInfo, MergedTopicData, Topic, TopicPoster, User } from "../types";
 import { ensureTagIconMap, getCachedTagIconMap, TagIconData, TagIconMap } from "./tagIcons";
 import { createEl } from "../utils/dom";
+import { getOpenTopicInNewTab } from "../config/storage";
 
 const LOADING_INDICATOR_SELECTOR = ".loading-indicator-container";
 const LOADING_STATE_CLASSES = ["ready", "loading", "done"];
@@ -22,6 +23,7 @@ const ACTIVE_CATEGORY_SELECTOR =
 let customViewObserver: MutationObserver | null = null;
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const CATEGORY_ICON_CACHE = new Map<number, string | null>();
+const TOPIC_LINK_REL = "noopener noreferrer";
 type CategoryVisual =
   | { type: "icon"; value: string }
   | { type: "emoji"; value: string };
@@ -34,6 +36,15 @@ let heatSettingsCache: HeatSettings | null = null;
 
 function isMobileView(): boolean {
   return document.documentElement.classList.contains("mobile-view");
+}
+
+function applyTopicLinkTarget(link: HTMLAnchorElement): HTMLAnchorElement {
+  if (!getOpenTopicInNewTab()) {
+    return link;
+  }
+  link.setAttribute("target", "_blank");
+  link.setAttribute("rel", TOPIC_LINK_REL);
+  return link;
 }
 
 function getLoadingIndicator(): HTMLDivElement | null {
@@ -595,7 +606,7 @@ function createPinnedStatus(topic: Topic): HTMLAnchorElement {
     class: "topic-status --pinned pin-toggle-button",
   });
   link.appendChild(createSvgIcon("thumbtack"));
-  return link;
+  return applyTopicLinkTarget(link);
 }
 
 function createStatusIcon(iconId: string, className: string, title: string): HTMLSpanElement {
@@ -640,7 +651,7 @@ function createTopicBadges(topic: Topic): HTMLSpanElement {
       title: "新话题",
       class: "badge badge-notification new-topic",
     });
-    badges.appendChild(badge);
+    badges.appendChild(applyTopicLinkTarget(badge));
   }
   return badges;
 }
@@ -648,7 +659,7 @@ function createTopicBadges(topic: Topic): HTMLSpanElement {
 function createTopicTitleLink(topic: Topic): HTMLAnchorElement {
   const titleText = getTopicTitle(topic);
   const titleSpan = createEl("span", { dir: "auto" }, [titleText]);
-  return createEl(
+  const link = createEl(
     "a",
     {
       href: `/t/${topic.slug}/${topic.id}`,
@@ -657,6 +668,7 @@ function createTopicTitleLink(topic: Topic): HTMLAnchorElement {
     },
     [titleSpan]
   );
+  return applyTopicLinkTarget(link);
 }
 
 function createTopicExcerpt(topic: Topic): HTMLAnchorElement | null {
@@ -668,9 +680,12 @@ function createTopicExcerpt(topic: Topic): HTMLAnchorElement | null {
     return null;
   }
   const excerptSpan = createEl("span", { dir: "auto" }, [excerptText]);
-  return createEl("a", { href: `/t/${topic.slug}/${topic.id}`, class: "topic-excerpt" }, [
-    excerptSpan,
-  ]);
+  const link = createEl(
+    "a",
+    { href: `/t/${topic.slug}/${topic.id}`, class: "topic-excerpt" },
+    [excerptSpan]
+  );
+  return applyTopicLinkTarget(link);
 }
 
 function createCategoryBadge(
@@ -940,7 +955,7 @@ function createRepliesCell(topic: Topic): HTMLTableCellElement {
   if (likesHeat) {
     classes.push(likesHeat);
   }
-  return createEl("td", { class: classes.join(" ") }, [link]);
+  return createEl("td", { class: classes.join(" ") }, [applyTopicLinkTarget(link)]);
 }
 
 function createRepliesBadgeBlock(topic: Topic): HTMLDivElement {
@@ -956,7 +971,7 @@ function createRepliesBadgeBlock(topic: Topic): HTMLDivElement {
   if (likesHeat) {
     classes.push(likesHeat);
   }
-  return createEl("div", { class: classes.join(" ") }, [link]);
+  return createEl("div", { class: classes.join(" ") }, [applyTopicLinkTarget(link)]);
 }
 
 function createViewsCell(topic: Topic): HTMLTableCellElement {
@@ -997,7 +1012,7 @@ function createActivityCell(topic: Topic): HTMLTableCellElement {
     "data-format": "tiny",
   }, [formatRelativeTimeTiny(topic.bumped_at)]);
   link.appendChild(relativeDate);
-  return createEl("td", activityAttrs, [link]);
+  return createEl("td", activityAttrs, [applyTopicLinkTarget(link)]);
 }
 
 function createMobileAvatar(topic: Topic, users: Map<number, User>): HTMLDivElement | null {
@@ -1024,7 +1039,7 @@ function createMobileAvatar(topic: Topic, users: Map<number, User>): HTMLDivElem
     title: buildPosterTitle(user, poster),
   });
   link.appendChild(img);
-  const wrapper = createEl("div", { class: "pull-left" }, [link]);
+  const wrapper = createEl("div", { class: "pull-left" }, [applyTopicLinkTarget(link)]);
   return wrapper;
 }
 
@@ -1044,7 +1059,7 @@ function createMobileActivityBlock(topic: Topic): HTMLDivElement {
     "data-format": "tiny",
   }, [formatRelativeTimeTiny(topic.bumped_at)]);
   link.appendChild(relativeDate);
-  const span = createEl("span", spanAttrs, [link]);
+  const span = createEl("span", spanAttrs, [applyTopicLinkTarget(link)]);
   return createEl("div", { class: "num activity last" }, [span]);
 }
 

@@ -30,12 +30,13 @@ let activeRequestId: number | null = null;
 let requestCounter = 0;
 let activeCustomUrl: string | null = null;
 let previousCategoryHref: string | null = null;
+
+export const CUSTOM_URL_PREFIX = "/custom-c/";
 const CATEGORY_LIST_SELECTOR = "#sidebar-section-content-categories";
 const CATEGORY_LINK_SELECTOR = "a.sidebar-section-link";
 const CUSTOM_GROUP_ATTR = "data-custom-group-id";
 const CUSTOM_LISTENER_ATTR = "data-custom-category-listener";
 const LOGO_LISTENER_ATTR = "data-custom-logo-listener";
-const CUSTOM_URL_PREFIX = "/custom-c/";
 const LIST_AREA_SELECTOR = "#list-area";
 const PENDING_CUSTOM_GROUP_KEY = "custom-category-pending-group";
 
@@ -435,7 +436,7 @@ function initLogoClickListener(): void {
       }
       cancelActiveOperation();
     },
-    true
+    true,
   );
 }
 

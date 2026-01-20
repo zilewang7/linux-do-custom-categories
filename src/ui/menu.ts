@@ -2,7 +2,9 @@ import { GM_registerMenuCommand, GM_unregisterMenuCommand } from "$";
 import {
   DEFAULT_REQUEST_CONTROL_SETTINGS,
   getRequestControlSettings,
+  getOpenTopicInNewTab,
   resetRequestControlSettings,
+  setOpenTopicInNewTab,
   saveRequestControlSettings,
 } from "../config/storage";
 
@@ -10,6 +12,7 @@ const MENU_IDS = {
   concurrency: "custom-category-request-concurrency",
   delay: "custom-category-request-delay",
   retry: "custom-category-request-retry",
+  openTopicInNewTab: "custom-category-topic-open-new-tab",
   reset: "custom-category-request-reset",
 };
 
@@ -21,8 +24,15 @@ function unregisterMenuCommand(id: string): void {
   }
 }
 
-function promptForNumber(label: string, currentValue: number, minValue: number): number | null {
-  const input = window.prompt(`${label} (>= ${minValue})`, String(currentValue));
+function promptForNumber(
+  label: string,
+  currentValue: number,
+  minValue: number,
+): number | null {
+  const input = window.prompt(
+    `${label} (>= ${minValue})`,
+    String(currentValue),
+  );
   if (input === null) {
     return null;
   }
@@ -39,7 +49,10 @@ function promptForNumber(label: string, currentValue: number, minValue: number):
   return Math.max(minValue, Math.round(parsed));
 }
 
-function promptForRetryAttempts(label: string, currentValue: number): number | null {
+function promptForRetryAttempts(
+  label: string,
+  currentValue: number,
+): number | null {
   const input = window.prompt(`${label} (-1 表示无限)`, String(currentValue));
   if (input === null) {
     return null;
@@ -66,15 +79,24 @@ function formatRetryAttempts(value: number): string {
   return value < 0 ? "无限" : String(value);
 }
 
+function formatToggle(value: boolean): string {
+  return value ? "开" : "关";
+}
+
 function refreshMenuCommands(): void {
   Object.values(MENU_IDS).forEach((id) => unregisterMenuCommand(id));
 
   const settings = getRequestControlSettings();
+  const openInNewTab = getOpenTopicInNewTab();
   GM_registerMenuCommand(
     `设置并发请求数量 (当前: ${settings.concurrency})`,
     () => {
       const currentSettings = getRequestControlSettings();
-      const nextValue = promptForNumber("请输入并发请求数量", currentSettings.concurrency, 1);
+      const nextValue = promptForNumber(
+        "请输入并发请求数量",
+        currentSettings.concurrency,
+        1,
+      );
       if (nextValue === null || nextValue === currentSettings.concurrency) {
         return;
       }
@@ -87,7 +109,7 @@ function refreshMenuCommands(): void {
     {
       id: MENU_IDS.concurrency,
       title: "控制同时发起的请求数量",
-    }
+    },
   );
 
   GM_registerMenuCommand(
@@ -97,7 +119,7 @@ function refreshMenuCommands(): void {
       const nextValue = promptForNumber(
         "请输入请求间隔 (毫秒)",
         currentSettings.requestDelayMs,
-        0
+        0,
       );
       if (nextValue === null || nextValue === currentSettings.requestDelayMs) {
         return;
@@ -111,7 +133,7 @@ function refreshMenuCommands(): void {
     {
       id: MENU_IDS.delay,
       title: "每次请求完成后的等待时间",
-    }
+    },
   );
 
   GM_registerMenuCommand(
@@ -120,9 +142,12 @@ function refreshMenuCommands(): void {
       const currentSettings = getRequestControlSettings();
       const nextValue = promptForRetryAttempts(
         "请输入最大重试次数",
-        currentSettings.maxRetryAttempts
+        currentSettings.maxRetryAttempts,
       );
-      if (nextValue === null || nextValue === currentSettings.maxRetryAttempts) {
+      if (
+        nextValue === null ||
+        nextValue === currentSettings.maxRetryAttempts
+      ) {
         return;
       }
       saveRequestControlSettings({
@@ -134,7 +159,7 @@ function refreshMenuCommands(): void {
     {
       id: MENU_IDS.retry,
       title: "设置失败重试上限，-1 表示无限重试",
-    }
+    },
   );
 
   GM_registerMenuCommand(
@@ -146,7 +171,20 @@ function refreshMenuCommands(): void {
     {
       id: MENU_IDS.reset,
       title: `恢复默认：并发 ${DEFAULT_REQUEST_CONTROL_SETTINGS.concurrency}，间隔 ${DEFAULT_REQUEST_CONTROL_SETTINGS.requestDelayMs} ms，重试 ${formatRetryAttempts(DEFAULT_REQUEST_CONTROL_SETTINGS.maxRetryAttempts)}`,
-    }
+    },
+  );
+
+  GM_registerMenuCommand(
+    `自定义类别帖子新标签页打开 (当前: ${formatToggle(openInNewTab)})`,
+    () => {
+      const nextValue = !getOpenTopicInNewTab();
+      setOpenTopicInNewTab(nextValue);
+      refreshMenuCommands();
+    },
+    {
+      id: MENU_IDS.openTopicInNewTab,
+      title: "控制自定义类别话题链接默认打开方式",
+    },
   );
 }
 

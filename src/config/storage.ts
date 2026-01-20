@@ -12,6 +12,7 @@ const CATEGORY_METADATA_KEY = "categoryMetadataCache";
 const CATEGORY_PATH_KEY = "categoryPathCache";
 const TAG_ICON_CACHE_KEY = "tagIconCache";
 const REQUEST_CONTROL_KEY = "requestControlSettings";
+const OPEN_TOPIC_NEW_TAB_KEY = "customTopicOpenInNewTab";
 export const DEFAULT_REQUEST_CONTROL_SETTINGS: RequestControlSettings = {
   concurrency: 5,
   requestDelayMs: 200,
@@ -119,4 +120,12 @@ export function saveRequestControlSettings(settings: RequestControlSettings): Re
 
 export function resetRequestControlSettings(): void {
   GM_setValue(REQUEST_CONTROL_KEY, DEFAULT_REQUEST_CONTROL_SETTINGS);
+}
+
+export function getOpenTopicInNewTab(): boolean {
+  return GM_getValue<boolean>(OPEN_TOPIC_NEW_TAB_KEY, true) === true;
+}
+
+export function setOpenTopicInNewTab(value: boolean): void {
+  GM_setValue(OPEN_TOPIC_NEW_TAB_KEY, value);
 }

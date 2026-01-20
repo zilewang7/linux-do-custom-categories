@@ -2,6 +2,7 @@ import { CategoryGroup } from "../types";
 import { deleteCategoryGroup, getCategoryGroups } from "../config/storage";
 import { createEl, waitForElement } from "../utils/dom";
 import { requestEditGroup } from "./configPanel";
+import { CUSTOM_URL_PREFIX } from "../main";
 
 const CATEGORY_LIST_SELECTOR = "#sidebar-section-content-categories";
 const CATEGORY_SECTION_SELECTOR = '[data-section-name="categories"]';
@@ -13,17 +14,27 @@ const ACTIVE_CLASS = "active";
 const LISTENER_ATTACHED_ATTR = "data-custom-group-listener";
 let activeGroupId: string | null = null;
 
+function buildCustomGroupHref(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return "#";
+  }
+  return `${CUSTOM_URL_PREFIX}${encodeURIComponent(trimmed)}`;
+}
+
 function clearActiveLinks(list: HTMLUListElement): void {
-  list.querySelectorAll<HTMLAnchorElement>(".sidebar-section-link.active").forEach((link) => {
-    link.classList.remove(ACTIVE_CLASS);
-    link.removeAttribute("aria-current");
-  });
+  list
+    .querySelectorAll<HTMLAnchorElement>(".sidebar-section-link.active")
+    .forEach((link) => {
+      link.classList.remove(ACTIVE_CLASS);
+      link.removeAttribute("aria-current");
+    });
 }
 
 function clearActiveCustomLinks(list: HTMLUListElement): void {
   list
     .querySelectorAll<HTMLAnchorElement>(
-      `a.sidebar-section-link[data-custom-group-id].${ACTIVE_CLASS}`
+      `a.sidebar-section-link[data-custom-group-id].${ACTIVE_CLASS}`,
     )
     .forEach((link) => {
       link.classList.remove(ACTIVE_CLASS);
@@ -60,7 +71,7 @@ function applyActiveGroup(list: HTMLUListElement): void {
     return;
   }
   const link = list.querySelector<HTMLAnchorElement>(
-    `a.sidebar-section-link[data-custom-group-id="${activeGroupId}"]`
+    `a.sidebar-section-link[data-custom-group-id="${activeGroupId}"]`,
   );
   if (!link) {
     activeGroupId = null;
@@ -78,7 +89,7 @@ export function setActiveCustomGroup(groupId: string): void {
     return;
   }
   const link = list.querySelector<HTMLAnchorElement>(
-    `a.sidebar-section-link[data-custom-group-id="${groupId}"]`
+    `a.sidebar-section-link[data-custom-group-id="${groupId}"]`,
   );
   if (!link) {
     return;
@@ -139,7 +150,10 @@ function ensureCustomStyles(): void {
 
 function createIconSvg(icon: string): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", `fa d-icon d-icon-${icon} svg-icon fa-width-auto svg-string`);
+  svg.setAttribute(
+    "class",
+    `fa d-icon d-icon-${icon} svg-icon fa-width-auto svg-string`,
+  );
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
   const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
@@ -151,7 +165,7 @@ function createIconSvg(icon: string): SVGSVGElement {
 function createAction(
   label: string,
   icon: string,
-  onActivate: () => void
+  onActivate: () => void,
 ): HTMLSpanElement {
   const action = createEl("span", {
     class: CUSTOM_ACTION_CLASS,
@@ -183,7 +197,7 @@ function createAction(
 
 function openCategoryEditModal(): void {
   const editButton = document.querySelector<HTMLButtonElement>(
-    `${CATEGORY_SECTION_SELECTOR} .sidebar-section-header-button`
+    `${CATEGORY_SECTION_SELECTOR} .sidebar-section-header-button`,
   );
   editButton?.click();
 }
@@ -191,7 +205,7 @@ function openCategoryEditModal(): void {
 function createCustomItem(
   group: CategoryGroup,
   onGroupClick: (group: CategoryGroup) => void,
-  onRefresh: () => void
+  onRefresh: () => void,
 ): HTMLLIElement {
   const actions = createEl("span", {
     class: `sidebar-section-link-suffix ${CUSTOM_ACTIONS_CLASS}`,
@@ -213,20 +227,28 @@ function createCustomItem(
 
   actions.append(
     createAction("编辑", "pencil", handleEdit),
-    createAction("删除", "trash-can", handleDelete)
+    createAction("删除", "trash-can", handleDelete),
   );
 
-  const link = createEl("a", {
-    class: "sidebar-section-link sidebar-row",
-    href: "#",
-    "data-custom-group-id": group.id,
-  }, [
-    createEl("span", { class: "sidebar-section-link-prefix icon" }, [
-      createEl("span", { style: "width: 1em; height: 1em; display: inline-block;" }),
-    ]),
-    createEl("span", { class: "sidebar-section-link-content-text" }, [group.name]),
-    actions,
-  ]);
+  const link = createEl(
+    "a",
+    {
+      class: "sidebar-section-link sidebar-row",
+      href: buildCustomGroupHref(group.name),
+      "data-custom-group-id": group.id,
+    },
+    [
+      createEl("span", { class: "sidebar-section-link-prefix icon" }, [
+        createEl("span", {
+          style: "width: 1em; height: 1em; display: inline-block;",
+        }),
+      ]),
+      createEl("span", { class: "sidebar-section-link-content-text" }, [
+        group.name,
+      ]),
+      actions,
+    ],
+  );
 
   link.addEventListener("click", (e) => {
     e.preventDefault();
@@ -244,11 +266,13 @@ function createCustomItem(
 
 function renderCustomGroups(
   list: HTMLUListElement,
-  onGroupClick: (group: CategoryGroup) => void
+  onGroupClick: (group: CategoryGroup) => void,
 ): void {
   ensureCustomStyles();
   ensureListListener(list);
-  list.querySelectorAll(`.${CUSTOM_ITEM_CLASS}`).forEach((item) => item.remove());
+  list
+    .querySelectorAll(`.${CUSTOM_ITEM_CLASS}`)
+    .forEach((item) => item.remove());
 
   const groups = getCategoryGroups();
   if (groups.length === 0) {
@@ -267,14 +291,14 @@ function renderCustomGroups(
 }
 
 export async function injectSidebar(
-  onGroupClick: (group: CategoryGroup) => void
+  onGroupClick: (group: CategoryGroup) => void,
 ): Promise<void> {
   const list = await waitForElement<HTMLUListElement>(CATEGORY_LIST_SELECTOR);
   renderCustomGroups(list, onGroupClick);
 }
 
 export function refreshSidebar(
-  onGroupClick: (group: CategoryGroup) => void
+  onGroupClick: (group: CategoryGroup) => void,
 ): void {
   const list = document.querySelector<HTMLUListElement>(CATEGORY_LIST_SELECTOR);
   if (!list) {
