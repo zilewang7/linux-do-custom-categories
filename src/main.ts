@@ -166,6 +166,14 @@ function isLogoLink(link: HTMLAnchorElement): boolean {
   return link.closest(".title") !== null;
 }
 
+function resetUrlToHomeIfCustom(): void {
+  if (!window.location.pathname.startsWith(CUSTOM_URL_PREFIX)) {
+    return;
+  }
+  const homeUrl = new URL("/", window.location.origin);
+  window.history.replaceState(window.history.state, document.title, homeUrl.href);
+}
+
 function redirectFromCustomUrlIfNeeded(): boolean {
   const customName = getCustomGroupNameFromPath(window.location.pathname);
   if (!customName) {
@@ -435,6 +443,7 @@ function initLogoClickListener(): void {
         return;
       }
       cancelActiveOperation();
+      resetUrlToHomeIfCustom();
     },
     true,
   );

@@ -3,6 +3,7 @@ import {
   CategoryGroup,
   CategoryMetadataCache,
   CategoryPathCache,
+  EmojiCache,
   RequestControlSettings,
   TagIconCache,
 } from "../types";
@@ -11,6 +12,7 @@ const STORAGE_KEY = "categoryGroups";
 const CATEGORY_METADATA_KEY = "categoryMetadataCache";
 const CATEGORY_PATH_KEY = "categoryPathCache";
 const TAG_ICON_CACHE_KEY = "tagIconCache";
+const EMOJI_CACHE_KEY = "emojiCache";
 const REQUEST_CONTROL_KEY = "requestControlSettings";
 const OPEN_TOPIC_NEW_TAB_KEY = "customTopicOpenInNewTab";
 export const DEFAULT_REQUEST_CONTROL_SETTINGS: RequestControlSettings = {
@@ -97,6 +99,14 @@ export function getTagIconCache(): TagIconCache | null {
 
 export function saveTagIconCache(cache: TagIconCache): void {
   GM_setValue(TAG_ICON_CACHE_KEY, cache);
+}
+
+export function getEmojiCache(): EmojiCache | null {
+  return GM_getValue<EmojiCache | null>(EMOJI_CACHE_KEY, null);
+}
+
+export function saveEmojiCache(cache: EmojiCache): void {
+  GM_setValue(EMOJI_CACHE_KEY, cache);
 }
 
 export function getCategoryPathCache(): CategoryPathCache | null {

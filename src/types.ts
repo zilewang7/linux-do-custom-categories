@@ -17,7 +17,7 @@ export interface Topic {
   pinned_globally?: boolean;
   unseen?: boolean;
   excerpt?: string | null;
-  tags?: string[];
+  tags?: Array<string | { id: number; name: string; slug: string }>;
   tags_descriptions?: Record<string, string>;
   image_url?: string | null;
   thumbnails?: TopicThumbnail[] | null;
@@ -124,4 +124,14 @@ export interface TagIconEntry {
 export interface TagIconCache {
   updatedAt: number;
   entries: TagIconEntry[];
+}
+
+export interface EmojiEntry {
+  name: string;
+  url: string;
+}
+
+export interface EmojiCache {
+  updatedAt: number;
+  entries: EmojiEntry[];
 }

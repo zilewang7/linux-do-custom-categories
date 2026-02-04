@@ -1,5 +1,12 @@
 import { CategoryInfo, MergedTopicData, Topic, TopicPoster, User } from "../types";
 import { ensureTagIconMap, getCachedTagIconMap, TagIconData, TagIconMap } from "./tagIcons";
+import {
+  applyEmojiToCustomList,
+  ensureEmojiMap,
+  findMissingEmojiNames,
+  getCachedEmojiMap,
+  markEmojiText,
+} from "./emojis";
 import { createEl } from "../utils/dom";
 import { getOpenTopicInNewTab } from "../config/storage";
 
@@ -28,6 +35,7 @@ type CategoryVisual =
   | { type: "icon"; value: string }
   | { type: "emoji"; value: string };
 let isTagIconFetchPending = false;
+let isEmojiFetchPending = false;
 type HeatSettings = {
   topicViews: { low: number; medium: number; high: number };
   topicPostLike: { low: number; medium: number; high: number };
@@ -497,7 +505,7 @@ function buildTopicRowClass(
   }
   if (topic.tags) {
     topic.tags.forEach((tag) => {
-      classes.push(`tag-${normalizeTagClass(tag)}`);
+      classes.push(`tag-${normalizeTagClass(getTagName(tag))}`);
     });
   }
   return classes.join(" ");
@@ -659,6 +667,7 @@ function createTopicBadges(topic: Topic): HTMLSpanElement {
 function createTopicTitleLink(topic: Topic): HTMLAnchorElement {
   const titleText = getTopicTitle(topic);
   const titleSpan = createEl("span", { dir: "auto" }, [titleText]);
+  markEmojiText(titleSpan, titleText);
   const link = createEl(
     "a",
     {
@@ -745,7 +754,13 @@ function createCategoryBadge(
   return createEl("a", wrapperAttrs, [badge]);
 }
 
-function createTagsList(tags: string[] | undefined): HTMLDivElement | null {
+type TagItem = string | { id: number; name: string; slug: string };
+
+function getTagName(tag: TagItem): string {
+  return typeof tag === "string" ? tag : tag.name;
+}
+
+function createTagsList(tags: TagItem[] | undefined): HTMLDivElement | null {
   if (!tags || tags.length === 0) {
     return null;
   }
@@ -760,18 +775,19 @@ function createTagsList(tags: string[] | undefined): HTMLDivElement | null {
         createEl("span", { class: "discourse-tags__tag-separator" }, [","])
       );
     }
-    const tagKey = normalizeTagKey(tag);
+    const tagName = getTagName(tag);
+    const tagKey = normalizeTagKey(tagName);
     const tagIconMap = getCachedTagIconMap();
     const tagIcon = tagIconMap?.get(tagKey) ?? null;
     const tagLink = createEl("a", {
-      href: `/tag/${tag}`,
-      "data-tag-name": tag,
+      href: `/tag/${tagName}`,
+      "data-tag-name": tagName,
       class: "discourse-tag box",
     });
     if (tagIcon) {
       tagLink.appendChild(createTagIconSpan(tagIcon));
     }
-    tagLink.append(tag);
+    tagLink.append(tagName);
     list.appendChild(tagLink);
   });
   return list;
@@ -939,6 +955,54 @@ function updateTagIconsIfNeeded(): void {
     })
     .finally(() => {
       isTagIconFetchPending = false;
+    });
+}
+
+function collectEmojiTexts(): string[] {
+  const container = document.getElementById(CUSTOM_LIST_CONTAINER_ID);
+  if (!container) {
+    return [];
+  }
+  const texts: string[] = [];
+  container
+    .querySelectorAll<HTMLSpanElement>("span[data-emoji-text]")
+    .forEach((span) => {
+      const value = span.getAttribute("data-emoji-text");
+      if (value) {
+        texts.push(value);
+      }
+    });
+  return texts;
+}
+
+function updateEmojisIfNeeded(): void {
+  const texts = collectEmojiTexts();
+  if (texts.length === 0) {
+    return;
+  }
+  const cached = getCachedEmojiMap();
+  const missing = findMissingEmojiNames(texts, cached);
+  if (missing.length === 0 && cached) {
+    applyEmojiToCustomList(cached);
+    return;
+  }
+  if (isEmojiFetchPending) {
+    return;
+  }
+  isEmojiFetchPending = true;
+  ensureEmojiMap(undefined, missing)
+    .then((map) => {
+      if (map) {
+        applyEmojiToCustomList(map);
+      }
+    })
+    .catch((error) => {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        console.warn("Failed to load emojis:", error);
+      }
+    })
+    .finally(() => {
+      isEmojiFetchPending = false;
     });
 }
 
@@ -1187,6 +1251,7 @@ export function renderTopicList(data: MergedTopicData, append = false): void {
   });
 
   updateTagIconsIfNeeded();
+  updateEmojisIfNeeded();
 }
 
 function getLoadingAnchor(): HTMLElement | null {
