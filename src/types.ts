@@ -26,6 +26,7 @@ export interface Topic {
   has_accepted_answer?: boolean;
   closed?: boolean;
   archived?: boolean;
+  score?: number;
 }
 
 export interface User {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Linux Do 自定义类别
 // @namespace    ddc/linux-do-custom-categories
-// @version      0.0.8
+// @version      0.0.9
 // @author       DDC(NaiveMagic)
 // @description  Linux Do Custom Categories
 // @license      MIT
@@ -2289,6 +2289,18 @@
   let isTagIconFetchPending = false;
   let isEmojiFetchPending = false;
   let heatSettingsCache = null;
+  let horizonThemeCache = null;
+  function isHorizonTheme() {
+    if (horizonThemeCache !== null) {
+      return horizonThemeCache;
+    }
+    const hasTopicList = document.querySelector(".topic-list") !== null;
+    const isHorizon = document.querySelector(".topic-list.--d-topic-cards") !== null || document.querySelector(".hc-topic-card") !== null;
+    if (hasTopicList || isHorizon) {
+      horizonThemeCache = isHorizon;
+    }
+    return isHorizon;
+  }
   function isMobileView() {
     return document.documentElement.classList.contains("mobile-view");
   }
@@ -2601,6 +2613,13 @@
     const years = Math.floor(months / 12);
     return `${years} 年`;
   }
+  function formatRelativeTimeMediumAgo(dateStr) {
+    const timeText = formatRelativeTimeTiny(dateStr);
+    if (timeText === "刚刚" || timeText === "") {
+      return timeText;
+    }
+    return `${timeText}前`;
+  }
   function formatCompactNumber(value) {
     if (value >= 1e6) {
       return `${(value / 1e6).toFixed(1).replace(/\.0$/, "")}M`;
@@ -2688,10 +2707,19 @@
         classes.push(`tag-${normalizeTagClass(getTagName(tag))}`);
       });
     }
+    if (isHorizonTheme()) {
+      classes.push("--high-context");
+      if (getReplyCount(topic) > 0) {
+        classes.push("--has-replies");
+      }
+      if (isHotTopic(topic) || topic.pinned || topic.pinned_globally) {
+        classes.push("--has-status-card");
+      }
+    }
     return classes.join(" ");
   }
-  function buildAvatarUrl(user) {
-    const template = user.avatar_template.replace("{size}", "48");
+  function buildAvatarUrl(user, size = 48) {
+    const template = user.avatar_template.replace("{size}", String(size));
     if (template.startsWith("http")) {
       return template;
     }
@@ -3194,6 +3222,128 @@
     link.appendChild(relativeDate);
     return createEl("td", activityAttrs, [applyTopicLinkTarget(link)]);
   }
+  function findOriginalPoster(topic, users) {
+    const poster = topic.posters[0];
+    if (!poster) {
+      return null;
+    }
+    return users.get(poster.user_id) ?? null;
+  }
+  function findLastReplier(topic, users) {
+    const lastPoster = topic.posters.find((poster) => {
+      const extras = parsePosterExtras(poster.extras);
+      return extras.includes("latest");
+    });
+    if (!lastPoster) {
+      return null;
+    }
+    return users.get(lastPoster.user_id) ?? null;
+  }
+  function isHotTopic(topic) {
+    return (topic.like_count ?? 0) >= 50 || getReplyCount(topic) >= 30;
+  }
+  function formatPostDate(dateStr) {
+    const date = new Date(dateStr);
+    return `${date.getMonth() + 1}月 ${date.getDate()} 日`;
+  }
+  function createHorizonStatusTags(topic) {
+    const container = createEl("div", { class: "hc-topic-card__status-tags" });
+    const mobile = isMobileView();
+    if (isHotTopic(topic)) {
+      const hotStatus = createEl("span", { class: "hc-topic-card__status --hot" });
+      hotStatus.appendChild(createSvgIcon("fire"));
+      if (!mobile) {
+        hotStatus.appendChild(createEl("span", { class: "hc-topic-card__status-text" }, ["热门"]));
+      }
+      container.appendChild(hotStatus);
+    }
+    if (topic.pinned || topic.pinned_globally) {
+      const pinnedStatus = createEl("span", { class: "hc-topic-card__status --pinned" });
+      pinnedStatus.appendChild(createSvgIcon("thumbtack"));
+      if (!mobile) {
+        pinnedStatus.appendChild(
+          createEl("span", { class: "hc-topic-card__status-text" }, ["已置顶"])
+        );
+      }
+      container.appendChild(pinnedStatus);
+    }
+    return container;
+  }
+  function createHorizonLastReply(topic, users) {
+    if (getReplyCount(topic) === 0) {
+      return null;
+    }
+    const lastReplier = findLastReplier(topic, users);
+    if (!lastReplier) {
+      return null;
+    }
+    const context = createEl("div", { class: "hc-topic-card__context" });
+    const lastReplyDiv = createEl("div", { class: "hc-topic-card__last-reply" });
+    lastReplyDiv.appendChild(
+      createEl("img", {
+        alt: "",
+        width: "24",
+        height: "24",
+        src: buildAvatarUrl(lastReplier, isMobileView() ? 72 : 48),
+        class: "avatar",
+        title: lastReplier.name ?? lastReplier.username
+      })
+    );
+    lastReplyDiv.appendChild(
+      createEl("span", { class: "hc-topic-card__last-reply-name" }, [lastReplier.username])
+    );
+    lastReplyDiv.appendChild(createEl("span", {}, ["回复"]));
+    const lastDate = topic.last_posted_at ?? topic.bumped_at;
+    const timeWrapper = createEl("span", { class: "hc-topic-card__time" });
+    timeWrapper.appendChild(
+      createEl("span", {
+        class: "relative-date date",
+        title: formatDateTimeTitle(lastDate),
+        "data-time": String(new Date(lastDate).getTime()),
+        "data-format": "medium-with-ago"
+      }, [formatRelativeTimeMediumAgo(lastDate)])
+    );
+    lastReplyDiv.appendChild(timeWrapper);
+    context.appendChild(lastReplyDiv);
+    return context;
+  }
+  function createHorizonStatNumber(value) {
+    const countSpan = createEl("span", { class: "hc-topic-card__count" });
+    const numberAttrs = { class: "number" };
+    if (value >= 1e3) {
+      numberAttrs.title = formatFullNumber(value);
+    }
+    countSpan.appendChild(createEl("span", numberAttrs, [formatCompactNumber(value)]));
+    return countSpan;
+  }
+  function createHorizonStats(topic) {
+    const stats = createEl("div", { class: "hc-topic-card__stats" });
+    const replies = getReplyCount(topic);
+    if (replies > 0) {
+      const replyLabel = `${replies} 条回复`;
+      const replyStat = createEl("span", {
+        class: "hc-topic-card__replies",
+        "aria-label": replyLabel,
+        title: replyLabel
+      });
+      replyStat.appendChild(createSvgIcon("reply"));
+      replyStat.appendChild(createHorizonStatNumber(replies));
+      stats.appendChild(replyStat);
+    }
+    const likes = topic.like_count ?? 0;
+    if (likes > 0) {
+      const likeLabel = `${likes} 个赞`;
+      const likeStat = createEl("span", {
+        class: "hc-topic-card__likes",
+        "aria-label": likeLabel,
+        title: likeLabel
+      });
+      likeStat.appendChild(createSvgIcon("heart"));
+      likeStat.appendChild(createHorizonStatNumber(likes));
+      stats.appendChild(likeStat);
+    }
+    return stats;
+  }
   function createMobileAvatar(topic, users) {
     const poster = topic.posters[0];
     if (!poster) {
@@ -3278,7 +3428,87 @@
     tr.appendChild(td);
     return tr;
   }
+  function createTopicRowHorizon(topic, users, categories) {
+    const category = categories.get(topic.category_id);
+    const parentCategory = category?.parent_category_id ? categories.get(category.parent_category_id) : void 0;
+    const tr = createEl("tr", {
+      class: buildTopicRowClass(topic, category, parentCategory),
+      "data-topic-id": String(topic.id)
+    });
+    const td = createEl("td", { class: "hc-topic-card" });
+    const header = createEl("div", { class: "hc-topic-card__header" });
+    const mobile = isMobileView();
+    const opDiv = createEl("div", { class: "hc-topic-card__op" });
+    const op = findOriginalPoster(topic, users);
+    if (op) {
+      const avatarDiv = createEl("div", { class: "hc-topic-card__avatar" });
+      avatarDiv.appendChild(
+        createEl("img", {
+          alt: "",
+          width: "48",
+          height: "48",
+          src: buildAvatarUrl(op, mobile ? 144 : 96),
+          class: "avatar",
+          title: op.name ?? op.username
+        })
+      );
+      opDiv.appendChild(avatarDiv);
+      const opInfo = createEl("div", { class: "hc-topic-card__op-info" });
+      if (topic.created_at) {
+        opInfo.appendChild(
+          createEl("span", { class: "hc-topic-card__op-timestamp" }, [
+            `已发布 ${formatPostDate(topic.created_at)}`
+          ])
+        );
+      }
+      opInfo.appendChild(
+        createEl("span", { class: "hc-topic-card__op-name" }, [`作者：@${op.username}`])
+      );
+      opDiv.appendChild(opInfo);
+    }
+    header.appendChild(opDiv);
+    header.appendChild(createHorizonStatusTags(topic));
+    td.appendChild(header);
+    const content = createEl("div", { class: "hc-topic-card__content" });
+    const titleWrapper = createEl("div", { class: "hc-topic-card__title" });
+    titleWrapper.appendChild(createTopicStatuses(topic));
+    const titleLink = createTopicTitleLink(topic);
+    titleLink.classList.add("hc-topic-card__title");
+    titleWrapper.appendChild(titleLink);
+    titleWrapper.appendChild(createTopicBadges(topic));
+    content.appendChild(titleWrapper);
+    const excerpt = createTopicExcerpt(topic);
+    if (excerpt) {
+      excerpt.appendChild(createEl("span", { class: "topic-excerpt-more" }, ["阅读更多"]));
+      content.appendChild(excerpt);
+    }
+    td.appendChild(content);
+    const lastReply = createHorizonLastReply(topic, users);
+    if (lastReply) {
+      td.appendChild(lastReply);
+    }
+    const footer = createEl("div", { class: "hc-topic-card__footer" });
+    const categoryTagsBlock = createEl("div", { class: "hc-topic-card__category-tags" });
+    if (category) {
+      const categoryDiv = createEl("div", { class: "hc-topic-card__category" });
+      categoryDiv.appendChild(createCategoryBadge(category, categories));
+      categoryTagsBlock.appendChild(categoryDiv);
+    }
+    const tagsList = createTagsList(topic.tags);
+    if (tagsList) {
+      tagsList.classList.add("hc-topic-card__tags");
+      categoryTagsBlock.appendChild(tagsList);
+    }
+    footer.appendChild(categoryTagsBlock);
+    footer.appendChild(createHorizonStats(topic));
+    td.appendChild(footer);
+    tr.appendChild(td);
+    return tr;
+  }
   function createTopicRow(topic, users, categories) {
+    if (isHorizonTheme()) {
+      return createTopicRowHorizon(topic, users, categories);
+    }
     if (isMobileView()) {
       return createTopicRowMobile(topic, users, categories);
     }
