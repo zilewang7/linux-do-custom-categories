@@ -131,6 +131,10 @@ function ensureCustomViewStyles(): void {
     .mobile-view.${CUSTOM_VIEW_CLASS} #${CUSTOM_LIST_CONTAINER_ID} .topic-item-metadata {
       width: 100%;
     }
+
+    #${CUSTOM_LIST_CONTAINER_ID} .--d-topic-cards .topic-list-item {
+      cursor: pointer;
+    }
   `;
   const styleEl = createEl("style", { id: CUSTOM_VIEW_STYLE_ID }, [styles]);
   document.head.appendChild(styleEl);
@@ -413,14 +417,6 @@ function formatRelativeTimeTiny(dateStr: string): string {
   return `${years} 年`;
 }
 
-function formatRelativeTimeMediumAgo(dateStr: string): string {
-  const timeText = formatRelativeTimeTiny(dateStr);
-  if (timeText === "刚刚" || timeText === "") {
-    return timeText;
-  }
-  return `${timeText}前`;
-}
-
 function formatCompactNumber(value: number): string {
   if (value >= 1000000) {
     return `${(value / 1000000).toFixed(1).replace(/\.0$/, "")}M`;
@@ -533,7 +529,6 @@ function buildTopicRowClass(
     });
   }
   if (isHorizonTheme()) {
-    classes.push("--high-context");
     if (getReplyCount(topic) > 0) {
       classes.push("--has-replies");
     }
@@ -1135,112 +1130,6 @@ function isHotTopic(topic: Topic): boolean {
   return (topic.like_count ?? 0) >= 50 || getReplyCount(topic) >= 30;
 }
 
-function formatPostDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return `${date.getMonth() + 1}月 ${date.getDate()} 日`;
-}
-
-function createHorizonStatusTags(topic: Topic): HTMLDivElement {
-  const container = createEl("div", { class: "hc-topic-card__status-tags" });
-  const mobile = isMobileView();
-  if (isHotTopic(topic)) {
-    const hotStatus = createEl("span", { class: "hc-topic-card__status --hot" });
-    hotStatus.appendChild(createSvgIcon("fire"));
-    if (!mobile) {
-      hotStatus.appendChild(createEl("span", { class: "hc-topic-card__status-text" }, ["热门"]));
-    }
-    container.appendChild(hotStatus);
-  }
-  if (topic.pinned || topic.pinned_globally) {
-    const pinnedStatus = createEl("span", { class: "hc-topic-card__status --pinned" });
-    pinnedStatus.appendChild(createSvgIcon("thumbtack"));
-    if (!mobile) {
-      pinnedStatus.appendChild(
-        createEl("span", { class: "hc-topic-card__status-text" }, ["已置顶"])
-      );
-    }
-    container.appendChild(pinnedStatus);
-  }
-  return container;
-}
-
-function createHorizonLastReply(topic: Topic, users: Map<number, User>): HTMLDivElement | null {
-  if (getReplyCount(topic) === 0) {
-    return null;
-  }
-  const lastReplier = findLastReplier(topic, users);
-  if (!lastReplier) {
-    return null;
-  }
-  const context = createEl("div", { class: "hc-topic-card__context" });
-  const lastReplyDiv = createEl("div", { class: "hc-topic-card__last-reply" });
-  lastReplyDiv.appendChild(
-    createEl("img", {
-      alt: "",
-      width: "24",
-      height: "24",
-      src: buildAvatarUrl(lastReplier, isMobileView() ? 72 : 48),
-      class: "avatar",
-      title: lastReplier.name ?? lastReplier.username,
-    })
-  );
-  lastReplyDiv.appendChild(
-    createEl("span", { class: "hc-topic-card__last-reply-name" }, [lastReplier.username])
-  );
-  lastReplyDiv.appendChild(createEl("span", {}, ["回复"]));
-  const lastDate = topic.last_posted_at ?? topic.bumped_at;
-  const timeWrapper = createEl("span", { class: "hc-topic-card__time" });
-  timeWrapper.appendChild(
-    createEl("span", {
-      class: "relative-date date",
-      title: formatDateTimeTitle(lastDate),
-      "data-time": String(new Date(lastDate).getTime()),
-      "data-format": "medium-with-ago",
-    }, [formatRelativeTimeMediumAgo(lastDate)])
-  );
-  lastReplyDiv.appendChild(timeWrapper);
-  context.appendChild(lastReplyDiv);
-  return context;
-}
-
-function createHorizonStatNumber(value: number): HTMLSpanElement {
-  const countSpan = createEl("span", { class: "hc-topic-card__count" });
-  const numberAttrs: Record<string, string> = { class: "number" };
-  if (value >= 1000) {
-    numberAttrs.title = formatFullNumber(value);
-  }
-  countSpan.appendChild(createEl("span", numberAttrs, [formatCompactNumber(value)]));
-  return countSpan;
-}
-
-function createHorizonStats(topic: Topic): HTMLDivElement {
-  const stats = createEl("div", { class: "hc-topic-card__stats" });
-  const replies = getReplyCount(topic);
-  if (replies > 0) {
-    const replyLabel = `${replies} 条回复`;
-    const replyStat = createEl("span", {
-      class: "hc-topic-card__replies",
-      "aria-label": replyLabel,
-      title: replyLabel,
-    });
-    replyStat.appendChild(createSvgIcon("reply"));
-    replyStat.appendChild(createHorizonStatNumber(replies));
-    stats.appendChild(replyStat);
-  }
-  const likes = topic.like_count ?? 0;
-  if (likes > 0) {
-    const likeLabel = `${likes} 个赞`;
-    const likeStat = createEl("span", {
-      class: "hc-topic-card__likes",
-      "aria-label": likeLabel,
-      title: likeLabel,
-    });
-    likeStat.appendChild(createSvgIcon("heart"));
-    likeStat.appendChild(createHorizonStatNumber(likes));
-    stats.appendChild(likeStat);
-  }
-  return stats;
-}
 
 function createMobileAvatar(topic: Topic, users: Map<number, User>): HTMLDivElement | null {
   const poster = topic.posters[0];
@@ -1353,83 +1242,159 @@ function createTopicRowHorizon(
     class: buildTopicRowClass(topic, category, parentCategory),
     "data-topic-id": String(topic.id),
   });
-  const td = createEl("td", { class: "hc-topic-card" });
 
-  // header: OP info + status tags
-  const header = createEl("div", { class: "hc-topic-card__header" });
-  const mobile = isMobileView();
-  const opDiv = createEl("div", { class: "hc-topic-card__op" });
+  // main-link td (matches official Horizon structure)
+  const mainTd = createEl("td", {
+    class: "main-link topic-list-data",
+    colspan: "1",
+  });
+  const linkTopLine = createEl("span", {
+    class: "link-top-line",
+    role: "heading",
+    "aria-level": "2",
+  });
+  linkTopLine.appendChild(createTopicStatuses(topic));
+  linkTopLine.appendChild(createTopicTitleLink(topic));
+  linkTopLine.appendChild(createTopicBadges(topic));
+  mainTd.appendChild(linkTopLine);
+
+  const linkBottomLine = createEl("div", { class: "link-bottom-line" });
+  if (category) {
+    linkBottomLine.appendChild(createCategoryBadge(category, categories));
+  }
+  const tagsList = createTagsList(topic.tags);
+  if (tagsList) {
+    linkBottomLine.appendChild(tagsList);
+  }
+  if (linkBottomLine.childNodes.length > 0) {
+    mainTd.appendChild(linkBottomLine);
+  }
+
+  const excerpt = createTopicExcerpt(topic);
+  if (excerpt) {
+    excerpt.appendChild(createEl("span", { class: "topic-excerpt-more" }, ["阅读更多"]));
+    mainTd.appendChild(excerpt);
+  }
+  tr.appendChild(mainTd);
+
+  // topic-status-data td
+  const statusTd = createEl("td", { class: "topic-status-data" });
+  if (topic.pinned || topic.pinned_globally) {
+    const pinnedCard = createEl("span", { class: "topic-status-card --pinned" });
+    pinnedCard.appendChild(createSvgIcon("thumbtack"));
+    pinnedCard.appendChild(createEl("p", { class: "topic-status-card__name" }, ["已置顶"]));
+    statusTd.appendChild(pinnedCard);
+  } else if (isHotTopic(topic)) {
+    const hotCard = createEl("span", { class: "topic-status-card --hot" });
+    hotCard.appendChild(createSvgIcon("fire"));
+    hotCard.appendChild(createEl("p", { class: "topic-status-card__name" }, ["热门"]));
+    statusTd.appendChild(hotCard);
+  }
+  tr.appendChild(statusTd);
+
+  // topic-category-data td
+  const categoryTd = createEl("td", { class: "topic-category-data" });
+  if (category) {
+    categoryTd.appendChild(createCategoryBadge(category, categories));
+  }
+  tr.appendChild(categoryTd);
+
+  // topic-likes-replies-data td
+  const likesRepliesTd = createEl("td", { class: "topic-likes-replies-data" });
+  const replies = getReplyCount(topic);
+  if (replies > 0) {
+    const repliesSpan = createEl("span", { class: "topic-replies" });
+    repliesSpan.appendChild(createSvgIcon("reply"));
+    const numberAttrs: Record<string, string> = { class: "number" };
+    if (replies >= 1000) {
+      numberAttrs.title = formatFullNumber(replies);
+    }
+    repliesSpan.appendChild(createEl("span", numberAttrs, [formatCompactNumber(replies)]));
+    likesRepliesTd.appendChild(repliesSpan);
+  }
+  tr.appendChild(likesRepliesTd);
+
+  // topic-creator-data td
+  const creatorTd = createEl("td", { class: "topic-creator-data" });
   const op = findOriginalPoster(topic, users);
   if (op) {
-    const avatarDiv = createEl("div", { class: "hc-topic-card__avatar" });
-    avatarDiv.appendChild(
+    const creatorDiv = createEl("div", { class: "--topic-creator" });
+    creatorDiv.appendChild(
       createEl("img", {
         alt: "",
         width: "48",
         height: "48",
-        src: buildAvatarUrl(op, mobile ? 144 : 96),
+        src: buildAvatarUrl(op, 288),
         class: "avatar",
         title: op.name ?? op.username,
       })
     );
-    opDiv.appendChild(avatarDiv);
-    const opInfo = createEl("div", { class: "hc-topic-card__op-info" });
-    if (topic.created_at) {
-      opInfo.appendChild(
-        createEl("span", { class: "hc-topic-card__op-timestamp" }, [
-          `已发布 ${formatPostDate(topic.created_at)}`,
-        ])
-      );
-    }
-    opInfo.appendChild(
-      createEl("span", { class: "hc-topic-card__op-name" }, [`作者：@${op.username}`])
+    creatorTd.appendChild(creatorDiv);
+  }
+  tr.appendChild(creatorTd);
+
+  // topic-activity-data td
+  const activityTd = createEl("td", { class: "topic-activity-data" });
+  const lastReplier = findLastReplier(topic, users);
+  const lastDate = topic.last_posted_at ?? topic.bumped_at;
+  if (lastReplier && replies > 0) {
+    const activitySpan = createEl("span", { class: "topic-activity --replied" });
+    activitySpan.appendChild(
+      createEl("span", { class: "topic-activity__username" }, [lastReplier.username])
     );
-    opDiv.appendChild(opInfo);
+    activitySpan.appendChild(createEl("span", { class: "dot-separator" }));
+    const timeDiv = createEl("div", { class: "topic-activity__time" });
+    timeDiv.appendChild(
+      createEl("span", {
+        class: "relative-date",
+        title: formatDateTimeTitle(lastDate),
+        "data-time": String(new Date(lastDate).getTime()),
+        "data-format": "tiny",
+      }, [formatRelativeTimeTiny(lastDate)])
+    );
+    activitySpan.appendChild(timeDiv);
+    activityTd.appendChild(activitySpan);
+  } else {
+    const activitySpan = createEl("span", { class: "topic-activity" });
+    const timeDiv = createEl("div", { class: "topic-activity__time" });
+    timeDiv.appendChild(
+      createEl("span", {
+        class: "relative-date",
+        title: formatDateTimeTitle(lastDate),
+        "data-time": String(new Date(lastDate).getTime()),
+        "data-format": "tiny",
+      }, [formatRelativeTimeTiny(lastDate)])
+    );
+    activitySpan.appendChild(timeDiv);
+    activityTd.appendChild(activitySpan);
   }
-  header.appendChild(opDiv);
-  header.appendChild(createHorizonStatusTags(topic));
-  td.appendChild(header);
+  tr.appendChild(activityTd);
 
-  // content: title wrapper + excerpt
-  const content = createEl("div", { class: "hc-topic-card__content" });
-  const titleWrapper = createEl("div", { class: "hc-topic-card__title" });
-  titleWrapper.appendChild(createTopicStatuses(topic));
-  const titleLink = createTopicTitleLink(topic);
-  titleLink.classList.add("hc-topic-card__title");
-  titleWrapper.appendChild(titleLink);
-  titleWrapper.appendChild(createTopicBadges(topic));
-  content.appendChild(titleWrapper);
-  const excerpt = createTopicExcerpt(topic);
-  if (excerpt) {
-    excerpt.appendChild(createEl("span", { class: "topic-excerpt-more" }, ["阅读更多"]));
-    content.appendChild(excerpt);
-  }
-  td.appendChild(content);
+  // click: mark selected + navigate on blank area
+  tr.addEventListener("click", (event) => {
+    const tbody = tr.closest("tbody");
+    if (tbody) {
+      tbody.querySelectorAll<HTMLTableRowElement>(".topic-list-item.selected").forEach((row) => {
+        row.classList.remove("selected");
+      });
+    }
+    tr.classList.add("selected");
 
-  // context: last reply info (only when has replies)
-  const lastReply = createHorizonLastReply(topic, users);
-  if (lastReply) {
-    td.appendChild(lastReply);
-  }
+    const target = event.target as HTMLElement;
+    if (target.closest("a, button")) {
+      return;
+    }
+    const titleLink = tr.querySelector<HTMLAnchorElement>("a.title.raw-link");
+    if (!titleLink) {
+      return;
+    }
+    if (event.ctrlKey || event.metaKey || event.shiftKey) {
+      window.open(titleLink.href, "_blank", "noopener,noreferrer");
+    } else {
+      titleLink.click();
+    }
+  });
 
-  // footer: category/tags + stats
-  const footer = createEl("div", { class: "hc-topic-card__footer" });
-  const categoryTagsBlock = createEl("div", { class: "hc-topic-card__category-tags" });
-  if (category) {
-    const categoryDiv = createEl("div", { class: "hc-topic-card__category" });
-    categoryDiv.appendChild(createCategoryBadge(category, categories));
-    categoryTagsBlock.appendChild(categoryDiv);
-  }
-  const tagsList = createTagsList(topic.tags);
-  if (tagsList) {
-    tagsList.classList.add("hc-topic-card__tags");
-    categoryTagsBlock.appendChild(tagsList);
-  }
-  footer.appendChild(categoryTagsBlock);
-  footer.appendChild(createHorizonStats(topic));
-  td.appendChild(footer);
-
-  tr.appendChild(td);
   return tr;
 }
 
